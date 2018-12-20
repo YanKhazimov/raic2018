@@ -12,6 +12,14 @@ public:
     MyStrategy();
 
     void act(const model::Robot& me, const model::Rules& rules, const model::Game& world, model::Action& action) override;
+
+private:
+    std::vector<double> getGoalieDefaultPosition(const model::Rules& rules,
+                                                 std::vector<double> ballPosition);
+    std::vector<double> predictBallState(const model::Rules& rules, const model::Ball &ball,
+                                         double secondsForward, int ticksForward);
+    bool ballGoesToGoal(const model::Rules& rules, const model::Ball &ball,
+                        std::vector<double>& where);
 };
 
 #endif
