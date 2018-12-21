@@ -13,12 +13,6 @@ const int32 BUFFER_SIZE = 8 * 1024;
 
 string RemoteProcessClient::readline() {
     while (true) {
-        size_t eol = buffer.find('\n');
-        if (eol != string::npos) {
-            string line = buffer.substr(0, eol);
-            buffer = buffer.substr(eol + 1);
-            return line;
-        }
         int32 received = socket.Receive(BUFFER_SIZE);
         if (received < 0) {
             cerr << "Error reading from socket" << endl;
@@ -27,7 +21,14 @@ string RemoteProcessClient::readline() {
         if (received == 0) {
             return "";
         }
+        size_t cur_pos = buffer.length();
         buffer.append(socket.GetData(), socket.GetData() + received);
+        size_t eol = buffer.find('\n', cur_pos);
+        if (eol != string::npos) {
+            string line = buffer.substr(0, eol);
+            buffer = buffer.substr(eol + 1);
+            return line;
+        }
     }
 }
 
@@ -75,7 +76,7 @@ unique_ptr<Game> RemoteProcessClient::read_game() {
     return result;
 }
 
-void RemoteProcessClient::write(const unordered_map<int, Action>& actions, const string& custom_rendering) {
+void RemoteProcessClient::write(const unordered_map<int, Action>& actions) {
     Document d;
     d.SetObject();
     Document::AllocatorType& allocator = d.GetAllocator();
@@ -85,7 +86,7 @@ void RemoteProcessClient::write(const unordered_map<int, Action>& actions, const
     StringBuffer buffer;
     Writer<StringBuffer> writer(buffer);
     d.Accept(writer);
-    writeline(string(buffer.GetString()) + "|" + custom_rendering + "\n<end>");
+    writeline(buffer.GetString());
 }
 
 void RemoteProcessClient::write_token(const string& token) {
