@@ -1,6 +1,7 @@
 #include "MyStrategy.h"
 #include <vector>
 #include <iostream>
+#include <fstream>
 #include <math.h>
 
 using namespace model;
@@ -9,43 +10,48 @@ MyStrategy::MyStrategy() { }
 
 const int TICKS = 60;
 
-double distance(std::vector<double> a, std::vector<double> b)
+bool eq(double a, double b)
 {
-    return sqrt((a[0] - b[0])*(a[0] - b[0]) + (a[2] - b[2])*(a[2] - b[2]));
+    return fabs(a - b) <= std::numeric_limits<double>::epsilon();
 }
 
-std::vector<double> MyStrategy::getGoalieDefaultPosition(const Rules& rules, std::vector<double> ballPosition)
+double distanceXZ(p3d a, p3d b)
+{
+    return sqrt((a.x - b.x)*(a.x - b.x) + (a.z - b.z)*(a.z - b.z));
+}
+
+p3d MyStrategy::getGoalieDefaultPosition(const Rules& rules, p3d ballPosition)
 {
     const Arena& arena = rules.arena;
 
     // by bissectrisa
-    double d1 = distance(ballPosition, {-arena.goal_width/2, 0, -arena.depth/2});
-    double d2 = distance(ballPosition, {arena.goal_width/2, 0, -arena.depth/2});
+    double d1 = distanceXZ(ballPosition, {-arena.goal_width/2, 0, -arena.depth/2});
+    double d2 = distanceXZ(ballPosition, {arena.goal_width/2, 0, -arena.depth/2});
 
     double x = -arena.goal_width/2 + arena.goal_width * d1 / (d1 + d2);
 
-    std::vector<double> result {x, 0.0, -arena.depth/2};
+    p3d result {x, 0.0, -arena.depth/2};
 
     return result;
 }
 
-void runFast(std::vector<double> to, const Robot& me, Action& action)
+void runFast(p3d to, const Robot& me, Action& action)
 {
-    action.target_velocity_x = 30 * (to[0] - me.x);
-    action.target_velocity_y = 30 * (to[1] - me.y);
-    action.target_velocity_z = 30 * (to[2] - me.z);
+    action.target_velocity_x = 30 * (to.x - me.x);
+    action.target_velocity_y = 30 * (to.y - me.y);
+    action.target_velocity_z = 30 * (to.z - me.z);
 }
 
-void bullyGoalie(const Robot& me, const Rules& rules, const Game& game, Action& action)
+void MyStrategy::C_bullyGoalie(const Robot& me, const Rules& rules, const Game& game, Action& action)
 {
-    std::vector<double> goaliePos { 0, 0, -rules.arena.depth };
+    p3d goaliePos { 0, 0, -rules.arena.depth };
 
     for (Robot r: game.robots)
     {
         if (r.player_id == me.player_id)
             continue;
 
-        if (r.z > goaliePos[2])
+        if (r.z > goaliePos.z)
         {
             goaliePos = { r.x, r.y, r.z };
         }
@@ -58,54 +64,88 @@ void MyStrategy::act(const Robot& me, const Rules& rules, const Game& game, Acti
 {
     if (me.id % 2 == 1)
     {
-        bullyGoalie(me, rules, game, action);
+        C_bullyGoalie(me, rules, game, action);
         return;
     }
 
-    std::vector<double> pos = getGoalieDefaultPosition(rules, { game.ball.x, game.ball.y, game.ball.z });
+    C_defend(me, rules, game, action);
+}
 
+void MyStrategy::C_defend(const Robot &me, const Rules &rules, const Game &game, Action &action)
+{
+    p3d pos = getGoalieDefaultPosition(rules, { game.ball.x, game.ball.y, game.ball.z });
 
     runFast(pos, me, action);
 
-    std::vector<double> foo;
-    if (ballGoesToGoal(rules, game.ball, foo) && // мяч попадает в ворота &&
-            //  && не могу достать
-            // пора
+    std::vector<p3d> interceptionPoints;
+    if (ballGoesToGoal(rules, game.ball, interceptionPoints)) // мяч попадает в ворота
+    {
+        // pick point to intercept
 
-            distance({ me.x, 0, me.z }, { game.ball.x, 0, game.ball.z }) < game.ball.radius * 2)
-        action.jump_speed = 15.0;//rules.ROBOT_MAX_JUMP_SPEED;
-
-    ballGoesToGoal(rules, game.ball, foo);
+        if (!eq(game.ball.y, game.ball.radius) && // не катится
+                distanceXZ({ me.x, 0, me.z }, { game.ball.x, 0, game.ball.z }) < game.ball.radius * 2) // пора
+        {
+            action.jump_speed = 15.0; // rules.ROBOT_MAX_JUMP_SPEED;
+        }
+    }
 }
 
-std::vector<double> MyStrategy::predictBallState(const Rules& rules, const Ball &ball, double secondsForward, int ticksForward)
+std::vector<p3d> MyStrategy::getInterceptionPoints(const Rules& rules, const Ball &ball, double secondsForward, int ticksForward)
 {
-    std::vector<double> result(3);
+    double GRAVITY = 30; // rules.GRAVITY
+    std::vector<p3d> result;
 
-    result[0] = ball.x + secondsForward * ball.velocity_x;
-
-    result[1] = ball.y;
+    p3d ballPos(ball.x, ball.y, ball.z);
 
     double ballVy = ball.velocity_y;
 
+    bool rolling = false;
+    if (fabs(ballVy) < 0.1 && ball.y < 2 * ball.radius) // rolling
+    {
+        rolling = true;
+    }
+
     int ticks = static_cast<int>(secondsForward * TICKS);
+    bool newInterval = true; // участок монотонности
     for (int t = 0; t < ticks; ++t)
     {
-        result[1] += ballVy / TICKS - rules.GRAVITY / TICKS / TICKS / 2;
-        ballVy -= rules.GRAVITY / TICKS;
+        ballPos.x += ball.velocity_x / TICKS;
+        ballPos.y += ballVy / TICKS - GRAVITY / TICKS / TICKS / 2;
+        ballPos.z += ball.velocity_z / TICKS;
 
-        if (result[1] < ball.radius)
+        if (ballVy * (ballVy - GRAVITY / TICKS) < 0.0)
         {
+            // going down
+            newInterval = true;
+        }
+
+        ballVy -= GRAVITY / TICKS;
+
+        if (newInterval &&
+                ((ballVy < 0.0 && ballPos.y < 2 * ball.radius) || (ballVy > 0.0 && ballPos.y < 2 * ball.radius)))
+        {
+            result.push_back(p3d(ballPos.x, ballPos.y, ballPos.z));
+            newInterval = false;
+        }
+
+        if (ballPos.y < ball.radius)
+        {
+            // going up
             ballVy = -ballVy;
-            result[1] += (ball.radius - result[1]);
+            ballPos.y += (ball.radius - ballPos.y);
+            newInterval = true;
         }
     }
+
+    result.push_back(p3d(ballPos.x, ballPos.y, ballPos.z));
 
     return result;
 }
 
-bool MyStrategy::ballGoesToGoal(const Rules& rules, const Ball &ball, std::vector<double>& where)
+bool MyStrategy::ballGoesToGoal(const Rules& rules, const Ball &ball, std::vector<p3d>& interceptionPoints)
 {
+    interceptionPoints.clear();
+
     if (ball.velocity_z >= 0.0) // от ворот
         return false;
 
@@ -122,14 +162,26 @@ bool MyStrategy::ballGoesToGoal(const Rules& rules, const Ball &ball, std::vecto
     int secodnsToGoalLine = static_cast<int>(secondsToGoalLineD);
     int ticksToGoalLine = static_cast<int>((secondsToGoalLineD - secodnsToGoalLine) * 60);
 
-    where = predictBallState(rules, ball, secondsToGoalLineD, ticksToGoalLine);
-    where[2] = -rules.arena.depth/2;
-    //std::cout << where[0] << '\t' << where[1] << std::endl;
+    interceptionPoints = getInterceptionPoints(rules, ball, secondsToGoalLineD, ticksToGoalLine);
 
-    bool result = fabs(where[0]) <= rules.arena.goal_width/2 /*- ball.radius*/ &&
-            fabs(where[1]) <= rules.arena.goal_height - ball.radius;
+    bool result = fabs(interceptionPoints.back().x) <= rules.arena.goal_width/2 /*- ball.radius*/ &&
+            fabs(interceptionPoints.back().y) <= rules.arena.goal_height - ball.radius;
 
-    //std::cout << result << std::endl;
+    std::ofstream ofs("log.txt", std::ios_base::app);
+    for (auto p: interceptionPoints)
+        ofs << p.x << '\t' << p.y << '\t' << p.z << std::endl;
+    ofs << std::endl;
+    ofs.close();
 
     return result;
+}
+
+p3d::p3d(double _x, double _y, double _z)
+    : x(_x), y(_y), z(_z)
+{
+}
+
+p3d::p3d()
+    : x(0.0), y(0.0), z(0.0)
+{
 }
