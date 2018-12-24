@@ -131,7 +131,6 @@ void MyStrategy::C_defend(const Robot &me, const Rules &rules, const Game &game,
     sprintTo(pos, me, action);
 
     std::vector<std::pair<p3d, int>> interceptionPoints;
-    std::cout << "tick = " << game.current_tick << std::endl;
     bool onTarget = ballGoesToGoal(rules, game.ball, interceptionPoints);
     if (onTarget)
     {
@@ -271,8 +270,6 @@ bool MyStrategy::canIntercept(std::pair<p3d, int> at, const Robot &me, const Rul
         vAlong += rules.ROBOT_ACCELERATION * (1.0 / TICKS);
         vAlong = std::min(vAlong, rules.ROBOT_MAX_GROUND_SPEED);
         ++takesTicks;
-        if (game.current_tick == 4003)
-            std::cout << distanceCovered << std::endl;
     }
 
     return takesTicks < at.second;
