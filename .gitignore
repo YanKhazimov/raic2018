@@ -26,3 +26,4 @@ codeball2018-windows.zip
 *.user
 *.user
 codeball/codeball.pro.user
+*.o

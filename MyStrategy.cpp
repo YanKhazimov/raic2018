@@ -131,6 +131,7 @@ void MyStrategy::C_defend(const Robot &me, const Rules &rules, const Game &game,
     sprintTo(pos, me, action);
 
     std::vector<std::pair<p3d, int>> interceptionPoints;
+    std::cout << "tick = " << game.current_tick << std::endl;
     bool onTarget = ballGoesToGoal(rules, game.ball, interceptionPoints);
     if (onTarget)
     {
@@ -156,10 +157,9 @@ void MyStrategy::C_defend(const Robot &me, const Rules &rules, const Game &game,
     m_text = std::to_string(rules.TICKS_PER_SECOND);
 }
 
-std::vector<std::pair<p3d, int>> MyStrategy::getInterceptionPoints(const Rules& rules, const Ball &ball, double secondsForward, int ticksForward)
+void MyStrategy::getInterceptionPoints(const Rules& rules, const Ball &ball, double secondsForward, std::vector<std::pair<p3d, int>>& points)
 {
     double GRAVITY = rules.GRAVITY;
-    std::vector<std::pair<p3d, int>> result;
 
     p3d ballPos(ball.x, ball.y, ball.z);
 
@@ -168,6 +168,7 @@ std::vector<std::pair<p3d, int>> MyStrategy::getInterceptionPoints(const Rules& 
     bool rolling = isRolling(ballVy, ball.y, ball.radius);
 
     int ticks = static_cast<int>(secondsForward * TICKS);
+
     bool newInterval = true; // участок монотонности
     for (int t = 0; t < ticks; ++t)
     {
@@ -187,7 +188,7 @@ std::vector<std::pair<p3d, int>> MyStrategy::getInterceptionPoints(const Rules& 
                 ((ballVy < 0.0 && ballPos.y < 2 * ball.radius) || (ballVy > 0.0 && ballPos.y < 2 * ball.radius)))
         {
             if (!rolling)
-                result.push_back({p3d(ballPos.x, ballPos.y, ballPos.z), t});
+                points.push_back({p3d(ballPos.x, ballPos.y, ballPos.z), t});
             newInterval = false;
         }
 
@@ -203,24 +204,22 @@ std::vector<std::pair<p3d, int>> MyStrategy::getInterceptionPoints(const Rules& 
     if (rolling)
     {
         int count = 5;
-        result.push_back({p3d(ball.x, ball.y, ball.z), 0});
+        points.push_back({p3d(ball.x, ball.y, ball.z), 0});
         for (int i = count; i > 0; --i)
         {
-            result.push_back({p3d(ballPos.x + (ball.x - ballPos.x) / count * i,
+            points.push_back({p3d(ballPos.x + (ball.x - ballPos.x) / count * i,
                                   ballPos.y + (ball.y - ballPos.y) / count * i,
                                   ballPos.z + (ball.z - ballPos.z) / count * i),
                               static_cast<int>(secondsForward * TICKS / 5)});
         }
     }
 
-    result.push_back({p3d(ballPos.x, ballPos.y, ballPos.z), ticks});
+    points.push_back({p3d(ballPos.x, ballPos.y, ballPos.z), ticks});
 
-    for (auto ip: result)
+    for (auto ip: points)
     {
         m_spheres.push_back(sphere(ip.first.x, ip.first.y, ip.first.z, ball.radius, p3d(0.0, 0.0, 1.0)));
     }
-
-    return result;
 }
 
 bool MyStrategy::ballGoesToGoal(const Rules& rules, const Ball &ball, std::vector<std::pair<p3d, int>>& interceptionPoints)
@@ -239,11 +238,12 @@ bool MyStrategy::ballGoesToGoal(const Rules& rules, const Ball &ball, std::vecto
     if (fabs(ball.x) >= rules.arena.width/2 - rules.arena.bottom_radius) // над радиусом - посчитаем позже
         return false;
 
-    double secondsToGoalLineD = (ball.z + rules.arena.depth/2) / -ball.velocity_z;
-    int secodnsToGoalLine = static_cast<int>(secondsToGoalLineD);
-    int ticksToGoalLine = static_cast<int>((secondsToGoalLineD - secodnsToGoalLine) * 60);
+    double secondsToGoalLine = (ball.z + rules.arena.depth/2) / -ball.velocity_z;
 
-    interceptionPoints = getInterceptionPoints(rules, ball, secondsToGoalLineD, ticksToGoalLine);
+    if (secondsToGoalLine > 30.0)
+        return false;
+
+    getInterceptionPoints(rules, ball, secondsToGoalLine, interceptionPoints);
 
     bool result = fabs(interceptionPoints.back().first.x) <= rules.arena.goal_width/2 /*- ball.radius*/ &&
             fabs(interceptionPoints.back().first.y) <= rules.arena.goal_height - ball.radius;
@@ -271,6 +271,8 @@ bool MyStrategy::canIntercept(std::pair<p3d, int> at, const Robot &me, const Rul
         vAlong += rules.ROBOT_ACCELERATION * (1.0 / TICKS);
         vAlong = std::min(vAlong, rules.ROBOT_MAX_GROUND_SPEED);
         ++takesTicks;
+        if (game.current_tick == 4003)
+            std::cout << distanceCovered << std::endl;
     }
 
     return takesTicks < at.second;

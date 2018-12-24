@@ -47,8 +47,8 @@ private:
 
     p3d getGoalieDefaultPosition(const model::Rules& rules,
                                  p3d ballPosition);
-    std::vector<std::pair<p3d, int>> getInterceptionPoints(const model::Rules& rules, const model::Ball &ball,
-                                         double secondsForward, int ticksForward);
+    void getInterceptionPoints(const model::Rules& rules, const model::Ball &ball,
+                                         double secondsForward, std::vector<std::pair<p3d, int>>& points);
     bool ballGoesToGoal(const model::Rules& rules, const model::Ball &ball,
                         std::vector<std::pair<p3d, int> > &interceptionPoints);
     bool canIntercept(std::pair<p3d, int> at, const model::Robot& me, const model::Rules& rules, const model::Game& game);
