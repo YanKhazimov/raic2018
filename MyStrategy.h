@@ -16,23 +16,45 @@ struct p3d {
     p3d();
 };
 
+struct sphere {
+    double x;
+    double y;
+    double z;
+    double r;
+    p3d rgb;
+
+    sphere(double _x, double _y, double _z, double _r, p3d _rgb);
+    sphere();
+};
+
 class MyStrategy : public Strategy {
 public:
     MyStrategy();
 
     void act(const model::Robot& me, const model::Rules& rules, const model::Game& world, model::Action& action) override;
 
+    std::string custom_rendering() override;
+
 private:
+    std::string m_json;
+    std::vector<sphere> m_spheres;
+    int m_tick_spheres = -1;
+    std::string m_text;
+
     // COMMANDS
     void C_defend(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action);
     void C_bullyGoalie(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action);
 
     p3d getGoalieDefaultPosition(const model::Rules& rules,
                                  p3d ballPosition);
-    std::vector<p3d> getInterceptionPoints(const model::Rules& rules, const model::Ball &ball,
+    std::vector<std::pair<p3d, int>> getInterceptionPoints(const model::Rules& rules, const model::Ball &ball,
                                          double secondsForward, int ticksForward);
     bool ballGoesToGoal(const model::Rules& rules, const model::Ball &ball,
-                        std::vector<p3d> &interceptionPoints);
+                        std::vector<std::pair<p3d, int> > &interceptionPoints);
+    bool canIntercept(std::pair<p3d, int> at, const model::Robot& me, const model::Rules& rules, const model::Game& game);
+
+    std::string addSphere(double x, double y, double z, double r, p3d rgb);
+    std::string addText(std::string text);
 };
 
 #endif
