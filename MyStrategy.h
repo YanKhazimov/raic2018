@@ -51,7 +51,7 @@ private:
                                          double secondsForward, std::vector<std::pair<p3d, int>>& points);
     bool ballGoesToGoal(const model::Rules& rules, const model::Ball &ball,
                         std::vector<std::pair<p3d, int> > &interceptionPoints);
-    bool canIntercept(std::pair<p3d, int> at, const model::Robot& me, const model::Rules& rules, const model::Game& game);
+    int interceptionTime(std::pair<p3d, int> at, const model::Robot& me, const model::Rules& rules, const model::Game& game);
 
     std::string addSphere(double x, double y, double z, double r, p3d rgb);
     std::string addText(std::string text);

@@ -120,9 +120,38 @@ std::string MyStrategy::custom_rendering()
     return m_json;
 }
 
-bool isRolling(double vy, double y, double r)
+bool isRolling(const model::Ball& ball)
 {
-    return fabs(vy) < 7.0 && y < 2 * r;
+    return fabs(ball.velocity_y) < 7.0 && ball.y < 2 * ball.radius;
+}
+
+bool timeToJump(const Robot &me, const std::pair<p3d, int>& iPoint, const Rules &rules)
+{
+    int ticksToGoUp = 0;
+    double myY = me.y;
+    double myVY = me.velocity_y;
+    while (myY < iPoint.first.y)
+    {
+        myY += myVY / TICKS;
+        myVY = std::min(myVY + rules.ROBOT_ACCELERATION / TICKS, rules.ROBOT_MAX_JUMP_SPEED) - rules.GRAVITY / TICKS;
+        if (myVY < 0.0)
+        {
+            return false;
+        }
+        ++ticksToGoUp;
+    }
+
+    return ticksToGoUp >= iPoint.second;
+}
+
+p3d hitPoint(const p3d& iPoint, const Rules &rules)
+{
+    return p3d(iPoint.x, iPoint.y - rules.BALL_RADIUS/2, iPoint.z - rules.BALL_RADIUS/2);
+}
+
+std::pair<p3d, int> hitPoint(const std::pair<p3d, int>& iPoint, const Rules &rules)
+{
+    return { hitPoint(iPoint.first, rules), iPoint.second };
 }
 
 void MyStrategy::C_defend(const Robot &me, const Rules &rules, const Game &game, Action &action)
@@ -135,25 +164,49 @@ void MyStrategy::C_defend(const Robot &me, const Rules &rules, const Game &game,
     if (onTarget)
     {
         // pick point to intercept
-        for (auto iPoint: interceptionPoints)
+        for (int i = 0; i < static_cast<int>(interceptionPoints.size()); ++i)
         {
-            if (canIntercept(iPoint, me, rules, game))
+            std::pair<p3d, int> iPoint = interceptionPoints[i];
+            int iTime = interceptionTime(iPoint, me, rules, game);
+            if (iTime <= iPoint.second)
             {
                 m_spheres.push_back(sphere(iPoint.first.x, iPoint.first.y, iPoint.first.z,
-                                           game.ball.radius*1.5, p3d(1.0, 0.0, 0.0)));
-                sprintTo(iPoint.first, me, action);
+                                           game.ball.radius*1.2, p3d(1.0, 0.0, 0.0)));
+
+                if (i == 1 && isRolling(game.ball)) // can intercept first point -> going for the ball
+                    iPoint = interceptionPoints[0];
+
+                std::pair<p3d, int> pointToHit = hitPoint(iPoint, rules);
+
+                if (iPoint.second == interceptionPoints.back().second)
+                {
+                    // goal line interception logic
+                    if (iTime + 1 == iPoint.second || iTime == iPoint.second)
+                        sprintTo(pointToHit.first, me, action);
+
+                    if (timeToJump(me, pointToHit, rules))
+                    {
+                        action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED;
+                    }
+                }
+                else
+                {
+                    // на выходе
+                    sprintTo(pointToHit.first, me, action);
+
+                    double distance = distanceXZ(p3d(game.ball.x, game.ball.y, game.ball.z), p3d(me.x, me.y, me.z));
+                    if ((isRolling(game.ball) && distance < (2*me.radius + game.ball.radius)) ||
+                            (!isRolling(game.ball) && timeToJump(me, pointToHit, rules)))
+                    {
+                        action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED;
+                    }
+                }
+
                 break;
             }
         }
-
-        if (!eq(game.ball.y, game.ball.radius) && // on the ground
-                distanceXZ({ me.x, 0, me.z }, { game.ball.x, 0, game.ball.z }) < game.ball.radius * 2) // high time
-        {
-            action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED;
-        }
     }
-    m_text = std::to_string(fabs(game.ball.velocity_y)) + (isRolling(game.ball.velocity_y, game.ball.y, game.ball.radius) ? "Rolling" : "");
-    m_text = std::to_string(rules.TICKS_PER_SECOND);
+    m_text = std::to_string(game.ball.y);
 }
 
 void MyStrategy::getInterceptionPoints(const Rules& rules, const Ball &ball, double secondsForward, std::vector<std::pair<p3d, int>>& points)
@@ -164,7 +217,7 @@ void MyStrategy::getInterceptionPoints(const Rules& rules, const Ball &ball, dou
 
     double ballVy = ball.velocity_y;
 
-    bool rolling = isRolling(ballVy, ball.y, ball.radius);
+    bool rolling = isRolling(ball);
 
     int ticks = static_cast<int>(secondsForward * TICKS);
 
@@ -202,14 +255,14 @@ void MyStrategy::getInterceptionPoints(const Rules& rules, const Ball &ball, dou
 
     if (rolling)
     {
-        int count = 5;
+        int count = 10;
         points.push_back({p3d(ball.x, ball.y, ball.z), 0});
-        for (int i = count; i > 0; --i)
+        for (int i = count - 1; i > 0; --i)
         {
             points.push_back({p3d(ballPos.x + (ball.x - ballPos.x) / count * i,
                                   ballPos.y + (ball.y - ballPos.y) / count * i,
                                   ballPos.z + (ball.z - ballPos.z) / count * i),
-                              static_cast<int>(secondsForward * TICKS / 5)});
+                              static_cast<int>(secondsForward * TICKS / count * (count - i))});
         }
     }
 
@@ -244,7 +297,7 @@ bool MyStrategy::ballGoesToGoal(const Rules& rules, const Ball &ball, std::vecto
 
     getInterceptionPoints(rules, ball, secondsToGoalLine, interceptionPoints);
 
-    bool result = fabs(interceptionPoints.back().first.x) <= rules.arena.goal_width/2 /*- ball.radius*/ &&
+    bool result = fabs(interceptionPoints.back().first.x) <= rules.arena.goal_width/2 - ball.radius &&
             fabs(interceptionPoints.back().first.y) <= rules.arena.goal_height - ball.radius;
 
     return result;
@@ -257,7 +310,7 @@ double dot(const p3d& a, const p3d& b)
     return std::inner_product(av.begin(), av.end(), bv.begin(), 0.0);
 }
 
-bool MyStrategy::canIntercept(std::pair<p3d, int> at, const Robot &me, const Rules &rules, const Game &game)
+int MyStrategy::interceptionTime(std::pair<p3d, int> at, const Robot &me, const Rules &rules, const Game &game)
 {
     double myDistance = distanceXZ(p3d(me.x, me.y, me.z), at.first);
     p3d normal(at.first.x - me.x, 0.0, at.first.z - me.z);
@@ -272,7 +325,7 @@ bool MyStrategy::canIntercept(std::pair<p3d, int> at, const Robot &me, const Rul
         ++takesTicks;
     }
 
-    return takesTicks < at.second;
+    return takesTicks;
 }
 
 p3d::p3d(double _x, double _y, double _z) : x(_x), y(_y), z(_z) {}
