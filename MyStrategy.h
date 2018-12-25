@@ -44,6 +44,7 @@ private:
     // COMMANDS
     void C_defend(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action);
     void C_bullyGoalie(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action);
+    void C_bullyAttacker(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action);
 
     p3d getGoalieDefaultPosition(const model::Rules& rules,
                                  p3d ballPosition);
@@ -51,6 +52,8 @@ private:
                                          double secondsForward, std::vector<std::pair<p3d, int>>& points);
     bool ballGoesToGoal(const model::Rules& rules, const model::Ball &ball,
                         std::vector<std::pair<p3d, int> > &interceptionPoints);
+    std::pair<int, int> pickInterceptionPoint(const std::vector<std::pair<p3d, int>>& interceptionPoints,
+                                              const model::Robot &me, const model::Rules &rules, const model::Game &game);
     int interceptionTime(std::pair<p3d, int> at, const model::Robot& me, const model::Rules& rules, const model::Game& game);
 
     std::string addSphere(double x, double y, double z, double r, p3d rgb);
