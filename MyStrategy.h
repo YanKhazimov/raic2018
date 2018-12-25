@@ -41,11 +41,20 @@ private:
     int m_tick_spheres = -1;
     std::string m_text;
 
+    enum Role {
+        Unassigned = 0,
+        Goalie,
+        Attacker
+    };
+
+    Role m_role;
+
     // COMMANDS
     void C_defend(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action);
     void C_bullyGoalie(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action);
     void C_bullyAttacker(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action);
 
+    void getRole(const model::Robot& me, const model::Game& game);
     p3d getGoalieDefaultPosition(const model::Rules& rules,
                                  p3d ballPosition);
     void getInterceptionPoints(const model::Rules& rules, const model::Ball &ball,

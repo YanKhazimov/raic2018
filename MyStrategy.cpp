@@ -10,6 +10,7 @@
 using namespace model;
 
 MyStrategy::MyStrategy()
+    : m_role(Role::Unassigned)
 {
 }
 
@@ -83,6 +84,27 @@ void MyStrategy::C_bullyAttacker(const Robot& me, const Rules& rules, const Game
     sprintTo(goaliePos, me, action);
 }
 
+void MyStrategy::getRole(const Robot& me, const Game& game)
+{
+    for (Robot r: game.robots)
+    {
+        if (r.player_id != me.player_id || r.id == me.id)
+            continue;
+
+        if (r.z < me.z ||
+                eq(r.z, me.z) && r.velocity_z < me.velocity_z ||
+                    eq(r.z, me.z) && eq(r.velocity_z, me.velocity_z) && r.id < me.id)
+
+        {
+            m_role = Role::Attacker;
+        }
+        else
+        {
+            m_role = Role::Goalie;
+        }
+    }
+}
+
 void getBehindBall(const Robot& me, const Game& game, Action& action)
 {
     p3d destination(game.ball.x, game.ball.y, game.ball.z - game.ball.radius);
@@ -103,10 +125,12 @@ void MyStrategy::act(const Robot& me, const Rules& rules, const Game& game, Acti
         m_tick_spheres = game.current_tick;
     }
 
-    if (me.id % 2 == 1)
+    getRole(me, game);
+
+    if (m_role == Role::Attacker)
     {
         //C_bullyGoalie(me, rules, game, action);
-        if (me.z + me.radius > game.ball.z /*- game.ball.radius*/)
+        if (me.z + me.radius > game.ball.z)
             getBehindBall(me, game, action);
         else
         {
