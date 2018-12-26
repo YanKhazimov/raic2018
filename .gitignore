@@ -2,7 +2,11 @@
 build-codeball-Desktop_Qt_5_11_3_MinGW_32bit-Debug/*.*
 build-codeball-Desktop_Qt_5_11_3_MinGW_32bit-Debug/*
 build-codeball-Desktop_Qt_5_11_3_MinGW_32bit-Debug/debug/*.*
+build-codeball-Desktop_Qt_5_11_2_MinGW_32bit-Debug/*.*
+build-codeball-Desktop_Qt_5_11_2_MinGW_32bit-Debug/*
+build-codeball-Desktop_Qt_5_11_2_MinGW_32bit-Debug/debug/*.*
 codeball/codeball.pro.user.*
+codeball/*.user
 *.user
 codeball2018-windows.zip
 *.zip

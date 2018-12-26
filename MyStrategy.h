@@ -63,8 +63,9 @@ private:
                         std::vector<std::pair<p3d, int> > &interceptionPoints);
     std::pair<int, int> pickInterceptionPoint(const std::vector<std::pair<p3d, int>>& interceptionPoints,
                                               const model::Robot &me, const model::Rules &rules);
-    int interceptionTime(std::pair<p3d, int> at, const model::Robot& me, const model::Rules& rules);
+    int interceptionTime(std::pair<p3d, int> at, const model::Robot& robot, const model::Rules& rules);
     bool canReachInTime(std::pair<p3d, int> at, const model::Robot& me, const model::Rules& rules, int &sprintTime, int &elevationTime);
+    bool interceptBounceAt(const std::pair<p3d, int>& point, const model::Robot &me, const model::Rules &rules, model::Action &action);
 
     std::string addSphere(double x, double y, double z, double r, p3d rgb);
     std::string addText(std::string text);
