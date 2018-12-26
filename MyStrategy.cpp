@@ -41,11 +41,33 @@ p3d MyStrategy::getGoalieDefaultPosition(const Rules& rules, p3d ballPosition)
     return result;
 }
 
+void setSpeed(double value, p3d normal, Action& action)
+{
+    if (eq(0.0, normal.x))
+        action.target_velocity_z = value;
+    else if (eq(0.0, normal.z))
+        action.target_velocity_x = value;
+    else
+    {
+        action.target_velocity_z = sqrt(value * value / (1 + normal.x/normal.z * normal.x/normal.z));
+        action.target_velocity_x = action.target_velocity_z * normal.x/normal.z;
+    }
+}
+
 void sprintTo(p3d to, const Robot& me, Action& action)
 {
-    action.target_velocity_x = 30 * (to.x - me.x);
-    action.target_velocity_y = 30 * (to.y - me.y);
+   action.target_velocity_x = 30 * (to.x - me.x);
+//    //action.target_velocity_y = 30 * (to.y - me.y);
     action.target_velocity_z = 30 * (to.z - me.z);
+}
+
+void sprintTo(p3d to, const Robot& me, const Rules& rules, Action& action)
+{
+    setSpeed(rules.ROBOT_MAX_GROUND_SPEED, p3d(to.x - me.x, 0.0, to.z - me.z), action);
+
+//    action.target_velocity_x = 30 * (to.x - me.x);
+//    //action.target_velocity_y = 30 * (to.y - me.y);
+//    action.target_velocity_z = 30 * (to.z - me.z);
 }
 
 void MyStrategy::C_bullyGoalie(const Robot& me, const Rules& rules, const Game& game, Action& action)
@@ -105,7 +127,7 @@ void MyStrategy::getRole(const Robot& me, const Game& game)
     }
 }
 
-void getBehindBall(const Robot& me, const Game& game, Action& action)
+void getBehindBall(const Robot& me, const Rules& rules, const Game& game, Action& action)
 {
     p3d destination(game.ball.x, game.ball.y, game.ball.z - game.ball.radius);
 
@@ -129,16 +151,30 @@ void MyStrategy::act(const Robot& me, const Rules& rules, const Game& game, Acti
 
     if (m_role == Role::Attacker)
     {
+        return;
         //C_bullyGoalie(me, rules, game, action);
         if (me.z + me.radius > game.ball.z)
-            getBehindBall(me, game, action);
+            getBehindBall(me, rules, game, action);
         else
         {
-            p3d ballPos(game.ball.x, game.ball.y, game.ball.z);
-            sprintTo(ballPos, me, action);
-            if (distanceXZ(ballPos, p3d(me.x, me.y, me.z)) < game.ball.radius + 2 * me.radius &&
-                    game.ball.y < 1.5 * game.ball.radius)
-                action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED;
+            if (game.ball.velocity_z >= rules.ROBOT_MAX_GROUND_SPEED)
+            {
+                m_text = "GOING TO SHOOTING POS";
+
+                // go to opp goal
+                p3d shootingPos(0.0, 0.0, rules.arena.depth / 2 - 2 * rules.BALL_RADIUS);
+                sprintTo(shootingPos, me, action);
+            }
+            else
+            {
+                m_text = "";
+
+                p3d ballPos(game.ball.x, game.ball.y, game.ball.z);
+                sprintTo(ballPos, me, action);
+                if (distanceXZ(ballPos, p3d(me.x, me.y, me.z)) < game.ball.radius + 2 * me.radius &&
+                        game.ball.y < 1.5 * game.ball.radius)
+                    action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED;
+            }
         }
         return;
     }
@@ -187,23 +223,28 @@ bool isRolling(const model::Ball& ball)
     return fabs(ball.velocity_y) < 7.0 && ball.y < 2 * ball.radius;
 }
 
-bool timeToJump(const Robot &me, const std::pair<p3d, int>& iPoint, const Rules &rules)
+int timeToElevate(double height, const Robot &me, const Rules &rules)
 {
     int ticksToGoUp = 0;
     double myY = me.y;
     double myVY = me.velocity_y;
-    while (myY < iPoint.first.y)
+    while (myY < height)
     {
         myY += myVY / TICKS;
         myVY = std::min(myVY + rules.ROBOT_ACCELERATION / TICKS, rules.ROBOT_MAX_JUMP_SPEED) - rules.GRAVITY / TICKS;
         if (myVY < 0.0)
         {
-            return false;
+            return -1;
         }
         ++ticksToGoUp;
     }
 
-    return ticksToGoUp >= iPoint.second;
+    return ticksToGoUp;
+}
+
+bool shouldJump(const Robot &me, const std::pair<p3d, int>& iPoint, const Rules &rules)
+{
+    return timeToElevate(iPoint.first.y, me, rules) >= iPoint.second;
 }
 
 p3d hitPoint(const p3d& iPoint, const Rules &rules)
@@ -217,13 +258,13 @@ std::pair<p3d, int> hitPoint(const std::pair<p3d, int>& iPoint, const Rules &rul
 }
 
 std::pair<int, int> MyStrategy::pickInterceptionPoint(const std::vector<std::pair<p3d, int>>& interceptionPoints,
-                                          const Robot &me, const Rules &rules, const Game &game)
+                                          const Robot &me, const Rules &rules)
 {
     int iTime = 0;
     for (int i = 0; i < static_cast<int>(interceptionPoints.size()); ++i)
     {
         std::pair<p3d, int> iPoint = interceptionPoints[i];
-        iTime = interceptionTime(iPoint, me, rules, game);
+        iTime = interceptionTime(iPoint, me, rules);
         if (iTime <= iPoint.second)
             return { i, iTime };
     }
@@ -241,11 +282,11 @@ void MyStrategy::C_defend(const Robot &me, const Rules &rules, const Game &game,
     if (onTarget)
     {
         int interceptionTime = 0, iPointIndex = -1;
-        std::tie(iPointIndex, interceptionTime) = pickInterceptionPoint(interceptionPoints, me, rules, game);
+        std::tie(iPointIndex, interceptionTime) = pickInterceptionPoint(interceptionPoints, me, rules);
 
         std::pair<p3d, int> iPoint = interceptionPoints[static_cast<unsigned int>(iPointIndex)];
 
-        m_text = (interceptionTime <= iPoint.second) ? "can intercept" : "CAN'T INTERCEPT";
+        //m_text = (interceptionTime <= iPoint.second) ? "can intercept" : "CAN'T INTERCEPT";
 
         m_spheres.push_back(sphere(iPoint.first.x, iPoint.first.y, iPoint.first.z,
                                    game.ball.radius*1.2, p3d(1.0, 0.0, 0.0)));
@@ -271,7 +312,7 @@ void MyStrategy::C_defend(const Robot &me, const Rules &rules, const Game &game,
                 //if (interceptionTime + 1 == iPoint.second || interceptionTime == iPoint.second)
                     sprintTo(pointToHit.first, me, action);
 
-                if (timeToJump(me, pointToHit, rules))
+                if (shouldJump(me, pointToHit, rules))
                 {
                     action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED;
                 }
@@ -279,12 +320,23 @@ void MyStrategy::C_defend(const Robot &me, const Rules &rules, const Game &game,
             else
             {
                 // field interception logic
-                sprintTo(pointToHit.first, me, action);
-
-                if (timeToJump(me, pointToHit, rules))
+                int sprintTime = 0, elevationTime = 0;
+                if (canReachInTime(pointToHit, me, rules, sprintTime, elevationTime))
                 {
-                    action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED;
+                    double desiredSpeed = rules.ROBOT_MAX_GROUND_SPEED * sprintTime / pointToHit.second;
+
+                    setSpeed(desiredSpeed, p3d(pointToHit.first.x - me.x, 0.0, pointToHit.first.z - me.z), action);
+
+                    if (elevationTime >= pointToHit.second)
+                        action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED;
                 }
+
+//                sprintTo(pointToHit.first, me, action);
+
+//                if (shouldJump(me, pointToHit, rules))
+//                {
+//                    action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED;
+//                }
             }
         }
     }
@@ -392,7 +444,7 @@ double dot(const p3d& a, const p3d& b)
     return std::inner_product(av.begin(), av.end(), bv.begin(), 0.0);
 }
 
-int MyStrategy::interceptionTime(std::pair<p3d, int> at, const Robot &me, const Rules &rules, const Game &game)
+int MyStrategy::interceptionTime(std::pair<p3d, int> at, const Robot &me, const Rules &rules)
 {
     double myDistance = distanceXZ(p3d(me.x, me.y, me.z), at.first);
     p3d normal(at.first.x - me.x, 0.0, at.first.z - me.z);
@@ -408,6 +460,22 @@ int MyStrategy::interceptionTime(std::pair<p3d, int> at, const Robot &me, const 
     }
 
     return takesTicks;
+}
+
+bool MyStrategy::canReachInTime(std::pair<p3d, int> at, const Robot &me, const Rules &rules, int& sprintTime, int& elevationTime)
+{
+    sprintTime = interceptionTime(at, me, rules);
+    if (sprintTime > at.second)
+        return false; // too far
+
+    elevationTime = timeToElevate(at.first.y, me, rules);
+    if (elevationTime == -1)
+        return false; // too high
+
+    if (elevationTime > at.second)
+        return false; // jumping too slow
+
+    return true;
 }
 
 p3d::p3d(double _x, double _y, double _z) : x(_x), y(_y), z(_z) {}
