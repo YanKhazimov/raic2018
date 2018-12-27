@@ -12,9 +12,20 @@ using namespace model;
 MyStrategy::MyStrategy()
     : m_role(Role::Unassigned)
 {
+
 }
 
 const int TICKS = 60;
+double brakeDistance(const Rules& rules)
+{
+    double result = 0.0;
+    double v = rules.ROBOT_MAX_GROUND_SPEED;
+    while (v > 0.0) {
+        result += v / TICKS;
+        v -= rules.ROBOT_ACCELERATION / TICKS;
+    }
+    return result;
+}
 
 bool eq(double a, double b)
 {
@@ -59,10 +70,19 @@ void setSpeed(double value, p3d normal, Action& action)
     }
 }
 
-void runTo(p3d to, const Robot& me, Action& action)
+void runTo(p3d to, const Robot& me, const Rules& rules, Action& action)
 {
-    action.target_velocity_x = 30 * (to.x - me.x);
-    action.target_velocity_z = 30 * (to.z - me.z);
+    if (distanceXZ(to, p3d(me.x, me.y, me.z)) > brakeDistance(rules))
+    {
+        setSpeed(rules.ROBOT_MAX_GROUND_SPEED, p3d(to.x - me.x, 0.0, to.z - me.z), action);
+    //action.target_velocity_x = rules.ROBOT_MAX_GROUND_SPEED * (to.x - me.x);
+    //action.target_velocity_z = rules.ROBOT_MAX_GROUND_SPEED * (to.z - me.z);
+    }
+    else
+    {
+        action.target_velocity_x = 0.0;
+        action.target_velocity_z = 0.0;
+    }
 }
 
 void sprintTo(p3d to, const Robot& me, const Rules& rules, Action& action)
@@ -127,7 +147,7 @@ void MyStrategy::getRole(const Robot& me, const Game& game)
     }
 }
 
-void getBehindBall(const Robot& me, const Rules& rules, const Game& game, Action& action)
+void MyStrategy::getBehindBall(const Robot& me, const Rules& rules, const Game& game, Action& action)
 {
     p3d destination(game.ball.x, game.ball.y, game.ball.z - game.ball.radius);
 
@@ -136,7 +156,64 @@ void getBehindBall(const Robot& me, const Rules& rules, const Game& game, Action
     else
         destination.x += game.ball.radius + me.radius;
 
+    m_spheres.push_back(sphere(destination.x, destination.y, destination.z,
+                               me.radius, p3d(0.0, 1.0, 0.0)));
+
     sprintTo(destination, me, rules, action);
+}
+
+bool isRolling(const model::Ball& ball)
+{
+    return fabs(ball.velocity_y) < 7.0 && ball.y < 2 * ball.radius;
+}
+
+bool isCentering(const Rules& rules, const Game& game, MyStrategy::futurePoint& point)
+{
+    if (!isRolling(game.ball))
+        return false;
+
+    if (game.ball.velocity_z < 0.2)//rules.ROBOT_MAX_GROUND_SPEED / 2)
+        return false;
+
+    p3d ball(game.ball.x,game.ball.y, game.ball.z);
+
+    bool z = true, x = true;
+    while ((x = fabs(ball.x) < rules.arena.width/2 - rules.arena.bottom_radius) &&
+           (z = ball.z < rules.arena.depth/2 - rules.arena.bottom_radius))
+    {
+        ball.x += game.ball.velocity_x / TICKS;
+        ball.z += game.ball.velocity_z / TICKS;
+    }
+
+    point = {ball, 0};
+
+    return ball.z > rules.arena.depth/2 - rules.arena.corner_radius &&
+            fabs(ball.x) > rules.arena.goal_width/2 &&
+            (!x || (!z && sign(ball.x) == sign(game.ball.x) && fabs(game.ball.x) > rules.arena.goal_width/2));
+}
+
+void MyStrategy::shoot(const Robot& me, const Rules& rules, const Game& game, Action& action)
+{
+    p3d target;
+    futurePoint p;
+    if (isCentering(rules, game, p))
+    {
+        target = p3d(p.first.x > 0.0 ? -rules.arena.goal_width/2 : rules.arena.goal_width/2, 0.0, 30.0);
+        m_text = "centering";
+        m_spheres.push_back(sphere(target.x, target.y, target.z, me.radius, p3d(1.0, 0.0, 0.0)));
+        runTo(target, me, rules, action);
+    }
+    else if (game.ball.z > rules.arena.depth/2 - rules.arena.corner_radius)
+    {
+        target = p3d(game.ball.x, game.ball.y, game.ball.z);
+        m_text = "";
+        runTo(target, me, rules, action);
+    }
+    else
+    {
+        target = p3d(game.ball.x, game.ball.y, game.ball.z);
+        sprintTo(target, me, rules, action);
+    }
 }
 
 void MyStrategy::act(const Robot& me, const Rules& rules, const Game& game, Action& action)
@@ -151,30 +228,28 @@ void MyStrategy::act(const Robot& me, const Rules& rules, const Game& game, Acti
 
     if (m_role == Role::Attacker)
     {
+        p3d ballpos(game.ball.x,game.ball.y, game.ball.z);
+        p3d ballv(game.ball.velocity_x, game.ball.velocity_y, game.ball.velocity_z);
+        for (int t = 0; t < 10; ++t)
+        {
+
+        }
+
+
         return;
-        //C_bullyGoalie(me, rules, game, action);
         if (me.z + me.radius > game.ball.z)
             getBehindBall(me, rules, game, action);
         else
         {
-//            if (game.ball.velocity_z >= rules.ROBOT_MAX_GROUND_SPEED)
-//            {
-//                //m_text = "GOING TO SHOOTING POS";
 
-//                // go to opp goal
-//                p3d shootingPos(0.0, 0.0, rules.arena.depth / 2 - 2 * rules.BALL_RADIUS);
-//                sprintTo(shootingPos, me, rules, action);
-//            }
-//            else
-            {
+            shoot(me, rules, game, action);
                 //m_text = "";
 
-                p3d ballPos(game.ball.x, game.ball.y, game.ball.z);
-                sprintTo(ballPos, me, rules, action);
-                if (distanceXZ(ballPos, p3d(me.x, me.y, me.z)) < game.ball.radius + 2 * me.radius &&
-                        game.ball.y < 1.5 * game.ball.radius)
-                    action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED;
-            }
+//                p3d ballPos(game.ball.x, game.ball.y, game.ball.z);
+//                sprintTo(ballPos, me, rules, action);
+//                if (distanceXZ(ballPos, p3d(me.x, me.y, me.z)) < game.ball.radius + 2 * me.radius &&
+//                        game.ball.y < 1.5 * game.ball.radius)
+//                    action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED;
         }
         return;
     }
@@ -218,11 +293,6 @@ std::string MyStrategy::custom_rendering()
     return m_json;
 }
 
-bool isRolling(const model::Ball& ball)
-{
-    return fabs(ball.velocity_y) < 7.0 && ball.y < 2 * ball.radius;
-}
-
 int timeToElevate(double height, const Robot &me, const Rules &rules)
 {
     int ticksToGoUp = 0;
@@ -242,7 +312,7 @@ int timeToElevate(double height, const Robot &me, const Rules &rules)
     return ticksToGoUp;
 }
 
-bool shouldJump(const Robot &me, const std::pair<p3d, int>& iPoint, const Rules &rules)
+bool shouldJump(const Robot &me, const MyStrategy::futurePoint& iPoint, const Rules &rules)
 {
     return timeToElevate(iPoint.first.y, me, rules) >= iPoint.second;
 }
@@ -252,18 +322,18 @@ p3d hitPoint(const p3d& iPoint, const Rules &rules)
     return p3d(iPoint.x, iPoint.y - rules.BALL_RADIUS/2, iPoint.z - rules.BALL_RADIUS/2);
 }
 
-std::pair<p3d, int> hitPoint(const std::pair<p3d, int>& iPoint, const Rules &rules)
+MyStrategy::futurePoint hitPoint(const MyStrategy::futurePoint& iPoint, const Rules &rules)
 {
     return { hitPoint(iPoint.first, rules), iPoint.second };
 }
 
-std::pair<int, int> MyStrategy::pickInterceptionPoint(const std::vector<std::pair<p3d, int>>& interceptionPoints,
+std::pair<int, int> MyStrategy::pickInterceptionPoint(const std::vector<futurePoint>& interceptionPoints,
                                           const Robot &me, const Rules &rules)
 {
     int iTime = 0;
     for (int i = 0; i < static_cast<int>(interceptionPoints.size()); ++i)
     {
-        std::pair<p3d, int> iPoint = interceptionPoints[i];
+        futurePoint iPoint = interceptionPoints[i];
         iTime = interceptionTime(iPoint, me, rules);
         if (iTime <= iPoint.second)
             return { i, iTime };
@@ -272,7 +342,7 @@ std::pair<int, int> MyStrategy::pickInterceptionPoint(const std::vector<std::pai
     return { static_cast<int>(interceptionPoints.size() - 1), iTime };
 }
 
-bool MyStrategy::interceptBounceAt(const std::pair<p3d, int>& point, const Robot &me, const Rules &rules, Action &action)
+bool MyStrategy::interceptBounceAt(const futurePoint& point, const Robot &me, const Rules &rules, Action &action)
 {
     int sprintTime = 0, elevationTime = 0;
     if (canReachInTime(point, me, rules, sprintTime, elevationTime))
@@ -293,16 +363,16 @@ bool MyStrategy::interceptBounceAt(const std::pair<p3d, int>& point, const Robot
 void MyStrategy::C_defend(const Robot &me, const Rules &rules, const Game &game, Action &action)
 {
     p3d pos = getGoalieDefaultPosition(rules, { game.ball.x, game.ball.y, game.ball.z });
-    runTo(pos, me, action);
+    runTo(pos, me, rules, action);
 
-    std::vector<std::pair<p3d, int>> interceptionPoints;
+    std::vector<futurePoint> interceptionPoints;
     bool onTarget = ballGoesToGoal(rules, game.ball, interceptionPoints);
     if (onTarget)
     {
         int interceptionTime = 0, iPointIndex = -1;
         std::tie(iPointIndex, interceptionTime) = pickInterceptionPoint(interceptionPoints, me, rules);
 
-        std::pair<p3d, int> iPoint = interceptionPoints[static_cast<unsigned int>(iPointIndex)];
+        futurePoint iPoint = interceptionPoints[static_cast<unsigned int>(iPointIndex)];
         if (iPoint.first.z > 0.0)
             return;
 
@@ -324,7 +394,7 @@ void MyStrategy::C_defend(const Robot &me, const Rules &rules, const Game &game,
         else
         {
             // ball is bouncing
-            std::pair<p3d, int> pointToHit = hitPoint(iPoint, rules);
+            futurePoint pointToHit = hitPoint(iPoint, rules);
             interceptBounceAt(pointToHit, me, rules, action);
         }
     }
@@ -353,7 +423,7 @@ void MyStrategy::C_defend(const Robot &me, const Rules &rules, const Game &game,
     }
 }
 
-void MyStrategy::getInterceptionPoints(const Rules& rules, const Ball &ball, double secondsForward, std::vector<std::pair<p3d, int>>& points)
+void MyStrategy::getInterceptionPoints(const Rules& rules, const Ball &ball, double secondsForward, std::vector<futurePoint>& points)
 {
     double GRAVITY = rules.GRAVITY;
 
@@ -418,7 +488,7 @@ void MyStrategy::getInterceptionPoints(const Rules& rules, const Ball &ball, dou
     }
 }
 
-bool MyStrategy::ballGoesToGoal(const Rules& rules, const Ball &ball, std::vector<std::pair<p3d, int>>& interceptionPoints)
+bool MyStrategy::ballGoesToGoal(const Rules& rules, const Ball &ball, std::vector<futurePoint>& interceptionPoints)
 {
     interceptionPoints.clear();
 
@@ -454,7 +524,7 @@ double dot(const p3d& a, const p3d& b)
     return std::inner_product(av.begin(), av.end(), bv.begin(), 0.0);
 }
 
-int MyStrategy::interceptionTime(std::pair<p3d, int> at, const Robot &robot, const Rules &rules)
+int MyStrategy::interceptionTime(futurePoint at, const Robot &robot, const Rules &rules)
 {
     double myDistance = distanceXZ(p3d(robot.x, robot.y, robot.z), at.first);
     p3d normal(at.first.x - robot.x, 0.0, at.first.z - robot.z);
@@ -472,7 +542,7 @@ int MyStrategy::interceptionTime(std::pair<p3d, int> at, const Robot &robot, con
     return takesTicks;
 }
 
-bool MyStrategy::canReachInTime(std::pair<p3d, int> at, const Robot &me, const Rules &rules, int& sprintTime, int& elevationTime)
+bool MyStrategy::canReachInTime(futurePoint at, const Robot &me, const Rules &rules, int& sprintTime, int& elevationTime)
 {
     sprintTime = interceptionTime(at, me, rules);
     if (sprintTime > at.second)
