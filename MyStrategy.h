@@ -70,6 +70,7 @@ private:
     int interceptionTime(futurePoint at, const model::Robot& robot, const model::Rules& rules);
     bool canReachInTime(futurePoint at, const model::Robot& me, const model::Rules& rules, int &sprintTime, int &elevationTime);
     bool interceptBounceAt(const futurePoint& point, const model::Robot &me, const model::Rules &rules, model::Action &action);
+    bool interceptBounceAt2(futurePoint point, const model::Robot &me, const model::Rules &rules, model::Action &action);
     p3d getGoalieDefaultPosition(const model::Rules& rules,
                                  p3d ballPosition);
 
@@ -78,6 +79,7 @@ private:
 
     void getBehindBall(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action);
     void shoot(const Robot& me, const Rules& rules, const Game& game, Action& action);
+    bool simulate(const Robot &me, const Rules& rules, const Game& game, int ticks, futurePoint &shootAt);
 
     std::string addSphere(double x, double y, double z, double r, p3d rgb);
     std::string addText(std::string text);
