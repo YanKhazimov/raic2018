@@ -37,6 +37,24 @@ double distanceXZ(p3d a, p3d b)
     return sqrt((a.x - b.x)*(a.x - b.x) + (a.z - b.z)*(a.z - b.z));
 }
 
+double length(p3d a)
+{
+    return sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+}
+
+p3d normalize(p3d v)
+{
+    double l = length(v);
+    return p3d(v.x/l, v.y/l, v.z/l);
+}
+
+double dot(const p3d& a, const p3d& b)
+{
+    std::vector<double> av = {a.x, a.y, a.z};
+    std::vector<double> bv = {b.x, b.y, b.z};
+    return std::inner_product(av.begin(), av.end(), bv.begin(), 0.0);
+}
+
 p3d MyStrategy::getGoalieDefaultPosition(const Rules& rules, p3d ballPosition)
 {
     const Arena& arena = rules.arena;
@@ -200,19 +218,251 @@ void MyStrategy::shoot(const Robot& me, const Rules& rules, const Game& game, Ac
     {
         target = p3d(p.first.x > 0.0 ? -rules.arena.goal_width/2 : rules.arena.goal_width/2, 0.0, 30.0);
         m_text = "centering";
-        m_spheres.push_back(sphere(target.x, target.y, target.z, me.radius, p3d(1.0, 0.0, 0.0)));
-        runTo(target, me, rules, action);
+        //m_spheres.push_back(sphere(target.x, target.y, target.z, me.radius, p3d(1.0, 0.0, 0.0)));
+        //runTo(target, me, rules, action);
     }
     else if (game.ball.z > rules.arena.depth/2 - rules.arena.corner_radius)
     {
         target = p3d(game.ball.x, game.ball.y, game.ball.z);
-        m_text = "";
-        runTo(target, me, rules, action);
+        m_text = "SHOOTABLE";
+        //runTo(target, me, rules, action);
     }
     else
     {
         target = p3d(game.ball.x, game.ball.y, game.ball.z);
-        sprintTo(target, me, rules, action);
+        m_text = "";
+        //sprintTo(target, me, rules, action);
+    }
+}
+
+std::pair<p3d, double> dan_to_plane(p3d point, p3d point_on_plane, p3d plane_normal)
+{
+    return {
+        plane_normal,
+                dot(point - point_on_plane, plane_normal)
+    };
+}
+
+std::pair<p3d, double> dan_to_sphere_inner(p3d point, p3d sphere_center, double sphere_radius)
+{
+    return {
+        normalize(sphere_center - point),
+            sphere_radius - length(point - sphere_center)
+    };
+}
+
+std::pair<p3d, double> dan_to_sphere_outer(p3d point, p3d sphere_center, double sphere_radius)
+{
+    return {
+        normalize(point - sphere_center),
+                length(point - sphere_center) - sphere_radius
+    };
+}
+
+std::pair<p3d, double> minDan(std::pair<p3d, double> a, std::pair<p3d, double> b)
+{
+    return a.second < b.second ? a : b;
+}
+
+std::pair<p3d, double> dan_to_arena_quarter(p3d point, const Arena& arena)
+{
+    // Ground
+    std::pair<p3d, double> dan = dan_to_plane(point, p3d(0.0, 0.0, 0.0), p3d(0.0, 1.0, 0.0));
+    // Ceiling
+    dan = minDan(dan, dan_to_plane(point, p3d(0.0, arena.height, 0.0), p3d(0.0, -1.0, 0.0)));
+    // Side x
+    dan = minDan(dan, dan_to_plane(point, p3d(arena.width/2, 0.0, 0.0), p3d(-1.0, 0.0, 0.0)));
+    // Side z (goal)
+    dan = minDan(dan, dan_to_plane(point,
+                                   p3d(0.0, 0.0, arena.depth/2 + arena.goal_depth),
+                                   p3d(0.0, 0.0, -1.0)));
+    // Side z
+    p3d v = p3d(point.x, point.y, 0.0) - p3d(arena.goal_width/2 - arena.goal_top_radius,
+                                             arena.goal_height - arena.goal_top_radius,
+                                             0.0);
+    if (point.x >= arena.goal_width/2 + arena.goal_side_radius ||
+            point.y >= arena.goal_height + arena.goal_side_radius ||
+            (v.x > 0.0 && v.y > 0.0 && length(v) >= arena.goal_top_radius + arena.goal_side_radius))
+        dan = minDan(dan, dan_to_plane(point, p3d(0.0, 0.0, arena.depth/2), p3d(0.0, 0.0, -1.0)));
+
+    // Side x & ceiling (goal)
+    if (point.z >= (arena.depth / 2) + arena.goal_side_radius)
+    {
+        // x
+        dan = minDan(dan, dan_to_plane(point, p3d(arena.goal_width/2, 0.0, 0.0), p3d(-1.0, 0.0, 0.0)));
+        // y
+        dan = minDan(dan, dan_to_plane(point, p3d(0.0, arena.goal_height, 0.0), p3d(0.0, -1.0, 0.0)));
+    }
+
+    // Goal back corners
+    // ...
+
+    // Corner
+    if (point.x > arena.width/2 - arena.corner_radius &&
+            point.z > arena.depth/2 - arena.corner_radius)
+        dan = minDan(dan, dan_to_sphere_inner(point,
+                                              p3d(arena.width/2 - arena.corner_radius, point.y, arena.depth/2 - arena.corner_radius),
+                                              arena.corner_radius));
+
+    // Goal outer corner
+    if (point.z < arena.depth/2 + arena.goal_side_radius)
+    {
+        // Side x
+        if (point.x < arena.goal_width/2 + arena.goal_side_radius)
+            dan = minDan(dan, dan_to_sphere_outer(point,
+                                                  p3d(arena.goal_width/2 + arena.goal_side_radius, point.y, arena.depth/2 + arena.goal_side_radius),
+                                                  arena.goal_side_radius));
+        // Ceiling
+        if (point.y < arena.goal_height + arena.goal_side_radius)
+            dan = minDan(dan, dan_to_sphere_outer(point,
+                                                  p3d(point.x, arena.goal_height + arena.goal_side_radius, arena.depth/2 + arena.goal_side_radius),
+                                                  arena.goal_side_radius));
+        // Top corner
+        p3d o(arena.goal_width/ - arena.goal_top_radius, arena.goal_height - arena.goal_top_radius, 0.0);
+        p3d v = p3d(point.x, point.y, 0.0) - o;
+        if (v.x > 0.0 && v.y > 0.0)
+        {
+            o = o + normalize(v) * (arena.goal_top_radius + arena.goal_side_radius);
+            dan = minDan(dan, dan_to_sphere_outer(point,
+                                                  p3d(o.x, o.y, arena.depth/2 + arena.goal_side_radius),
+                                                  arena.goal_side_radius));
+        }
+    }
+
+    // Goal inside top corners
+    // ...
+
+    // Bottom corners
+    if (point.y < arena.bottom_radius)
+    {
+        // Side x
+        if (point.x > arena.width/2 - arena.bottom_radius)
+            dan = minDan(dan, dan_to_sphere_inner(point,
+                                                  p3d(arena.width/2 - arena.bottom_radius, arena.bottom_radius, point.z),
+                                                  arena.bottom_radius));
+        // Side z
+        if (point.z > arena.depth/2 - arena.bottom_radius &&
+                point.x >= arena.goal_width/2 + arena.goal_side_radius)
+            dan = minDan(dan, dan_to_sphere_inner(point,
+                                                  p3d(point.x, arena.bottom_radius, arena.depth/2 - arena.bottom_radius),
+                                                  arena.bottom_radius));
+        // Side z (goal)
+        if (point.z > arena.depth/2 + arena.goal_depth - arena.bottom_radius)
+            dan = minDan(dan, dan_to_sphere_inner(point,
+                                                  p3d(point.x, arena.bottom_radius, arena.depth/2 + arena.goal_depth - arena.bottom_radius),
+                                                  arena.bottom_radius));
+        // Goal outer corner
+        p3d o(arena.goal_width/2 + arena.goal_side_radius, arena.depth/2 + arena.goal_side_radius, 0.0);
+        p3d v = p3d(point.x, point.z, 0.0) - o;
+        if (v.x < 0.0 && v.y < 0.0 && length(v) < arena.goal_side_radius + arena.bottom_radius)
+        {
+            o = o + normalize(v) * (arena.goal_side_radius + arena.bottom_radius);
+            dan = minDan(dan, dan_to_sphere_inner(point,
+                                                  p3d(o.x, arena.bottom_radius, o.y),
+                                                  arena.bottom_radius));
+        }
+        // Side x (goal)
+        if (point.z >= arena.depth/2 + arena.goal_side_radius &&
+                point.x > arena.goal_width/2 - arena.bottom_radius)
+            dan = minDan(dan, dan_to_sphere_inner(point,
+                                                  p3d(arena.goal_width/2 - arena.bottom_radius, arena.bottom_radius, point.z),
+                                                  arena.bottom_radius));
+        // Corner
+        if (point.x > arena.width/2 - arena.corner_radius &&
+                point.z > arena.depth/2 - arena.corner_radius)
+        {
+            p3d corner_o(arena.width/2 - arena.corner_radius,
+                         arena.depth/2 - arena.corner_radius,
+                         0.0);
+            p3d n = p3d(point.x, point.z, 0.0) - corner_o;
+            double dist = length(n);
+            if (dist > arena.corner_radius - arena.bottom_radius)
+            {
+                n.x = n.x / dist;
+                n.y = n.y / dist;
+                n.z = n.z / dist;
+                p3d o2 = corner_o + n * (arena.corner_radius - arena.bottom_radius);
+                dan = minDan(dan, dan_to_sphere_inner(point,
+                                                      p3d(o2.x, arena.bottom_radius, o2.y),
+                                                      arena.bottom_radius));
+            }
+        }
+    }
+
+    // Ceiling corners
+    if (point.y > arena.height - arena.top_radius)
+    {
+        // Side x
+        if (point.x > arena.width/2 - arena.top_radius)
+            dan = minDan(dan, dan_to_sphere_inner(point,
+                                                  p3d(arena.width/2 - arena.top_radius, arena.height - arena.top_radius, point.z),
+                                                  arena.top_radius));
+        // Side z
+        if (point.z > arena.depth/2 - arena.top_radius)
+            dan = minDan(dan, dan_to_sphere_inner(point,
+                                                p3d(point.x, arena.height - arena.top_radius, arena.depth/2 - arena.top_radius),
+                                                arena.top_radius));
+        // Corner
+        if (point.x > arena.width/2 - arena.corner_radius &&
+                point.z > arena.depth/2 - arena.corner_radius)
+        {
+            p3d corner_o(arena.width/2 - arena.corner_radius, arena.depth/2 - arena.corner_radius, 0.0);
+            p3d dv = p3d(point.x, point.z, 0.0) - corner_o;
+            if (length(dv) > arena.corner_radius - arena.top_radius)
+            {
+                p3d n = normalize(dv);
+                p3d o2 = corner_o + n * (arena.corner_radius - arena.top_radius);
+                dan = minDan(dan, dan_to_sphere_inner(point,
+                                                      p3d(o2.x, arena.height - arena.top_radius, o2.y),
+                                                      arena.top_radius));
+            }
+        }
+    }
+
+    return dan;
+}
+
+std::pair<p3d, double> dan_to_arena(p3d point, const Arena& arena)
+{
+    bool negate_x = point.x < 0;
+    bool negate_z = point.z < 0;
+    if (negate_x)
+        point.x = -point.x;
+    if (negate_z)
+        point.z = -point.z;
+    auto result = dan_to_arena_quarter(point, arena);
+    if (negate_x)
+        result.first.x = -result.first.x;
+    if (negate_z)
+        result.first.z = -result.first.z;
+    return result;
+}
+
+void simulateRoll(p3d& ballpos, p3d& ballv, const p3d& normal, const Rules& rules)
+{
+    double dist = dot(ballv, normalize(normal));
+    p3d planeProj = ballpos + ballv - normalize(normal) * dist;
+    p3d vAlong = normalize(planeProj - ballpos) * length(ballv);
+    vAlong.y -= rules.GRAVITY / TICKS;
+
+    ballpos = ballpos + vAlong * (1.0 / TICKS);
+    ballv = vAlong;
+}
+
+void simulateBounce(p3d& ballPos, p3d& ballv, const Rules& rules)
+{
+    ballPos.x += ballv.x / TICKS;
+    ballPos.y += ballv.y / TICKS - rules.GRAVITY / TICKS / TICKS / 2;
+    ballPos.z += ballv.z / TICKS;
+
+    ballv.y -= rules.GRAVITY / TICKS;
+
+    std::pair<p3d, double> newDan = dan_to_arena(ballPos, rules.arena);
+    if (newDan.second < rules.BALL_RADIUS)
+    {
+        double vAlongDan = dot(ballv, newDan.first);
+        ballv = ballv - normalize(newDan.first) * vAlongDan * (1.0 + rules.BALL_ARENA_E);
+        ballPos = ballPos + normalize(newDan.first) * (rules.BALL_RADIUS - newDan.second) * (1.0 + rules.BALL_ARENA_E);
     }
 }
 
@@ -222,23 +472,39 @@ void MyStrategy::act(const Robot& me, const Rules& rules, const Game& game, Acti
     {
         m_spheres.clear();
         m_tick_spheres = game.current_tick;
+        m_text = "";
     }
 
     getRole(me, game);
 
     if (m_role == Role::Attacker)
     {
-        p3d ballpos(game.ball.x,game.ball.y, game.ball.z);
-        p3d ballv(game.ball.velocity_x, game.ball.velocity_y, game.ball.velocity_z);
-        for (int t = 0; t < 10; ++t)
-        {
+//        p3d ballpos(game.ball.x,game.ball.y, game.ball.z);
+//        p3d ballv(game.ball.velocity_x, game.ball.velocity_y, game.ball.velocity_z);
+//        for (int t = 0; t < 500; ++t)
+//        {
+//            std::pair<p3d, double> dan = dan_to_arena(ballpos, rules.arena);
+//            if (dan.second < game.ball.radius + 0.01 && dot(ballv, dan.first) < 0.0)
+//            {
+//                // rolling
+//                simulateRoll(ballpos, ballv, dan.first, rules);
 
-        }
+//                if (t % 10 == 0)
+//                    m_spheres.push_back(sphere(ballpos.x, ballpos.y, ballpos.z, rules.BALL_RADIUS, p3d(1.0, 0.0, 0.0)));
+//            }
+//            else
+//            {
+//                simulateBounce(ballpos, ballv, rules);
 
+//                if (t % 10 == 0)
+//                    m_spheres.push_back(sphere(ballpos.x, ballpos.y, ballpos.z, rules.BALL_RADIUS, p3d(1.0, 0.0, 0.0)));
+//            }
 
-        return;
+//        }
+
+//        return;
         if (me.z + me.radius > game.ball.z)
-            getBehindBall(me, rules, game, action);
+            ;//getBehindBall(me, rules, game, action);
         else
         {
 
@@ -289,6 +555,10 @@ std::string MyStrategy::custom_rendering()
     m_json += addText(m_text);
 
     m_json += "]";
+
+    std::ofstream ofs("js.txt");
+    ofs << m_json;
+    ofs.close();
 
     return m_json;
 }
@@ -378,8 +648,8 @@ void MyStrategy::C_defend(const Robot &me, const Rules &rules, const Game &game,
 
         //m_text = (interceptionTime <= iPoint.second) ? "can intercept" : "CAN'T INTERCEPT";
 
-        m_spheres.push_back(sphere(iPoint.first.x, iPoint.first.y, iPoint.first.z,
-                                   game.ball.radius*1.2, p3d(1.0, 0.0, 0.0)));
+//        m_spheres.push_back(sphere(iPoint.first.x, iPoint.first.y, iPoint.first.z,
+//                                   game.ball.radius*1.2, p3d(1.0, 0.0, 0.0)));
 
         if (isRolling(game.ball))
         {
@@ -484,7 +754,7 @@ void MyStrategy::getInterceptionPoints(const Rules& rules, const Ball &ball, dou
 
     for (auto ip: points)
     {
-        m_spheres.push_back(sphere(ip.first.x, ip.first.y, ip.first.z, ball.radius, p3d(0.0, 0.0, 1.0)));
+        //m_spheres.push_back(sphere(ip.first.x, ip.first.y, ip.first.z, ball.radius, p3d(0.0, 0.0, 1.0)));
     }
 }
 
@@ -515,13 +785,6 @@ bool MyStrategy::ballGoesToGoal(const Rules& rules, const Ball &ball, std::vecto
             fabs(interceptionPoints.back().first.y) <= rules.arena.goal_height - ball.radius;
 
     return result;
-}
-
-double dot(const p3d& a, const p3d& b)
-{
-    std::vector<double> av = {a.x, a.y, a.z};
-    std::vector<double> bv = {b.x, b.y, b.z};
-    return std::inner_product(av.begin(), av.end(), bv.begin(), 0.0);
 }
 
 int MyStrategy::interceptionTime(futurePoint at, const Robot &robot, const Rules &rules)
@@ -560,5 +823,17 @@ bool MyStrategy::canReachInTime(futurePoint at, const Robot &me, const Rules &ru
 
 p3d::p3d(double _x, double _y, double _z) : x(_x), y(_y), z(_z) {}
 p3d::p3d() : x(0.0), y(0.0), z(0.0) {}
+p3d p3d::operator-(const p3d &other) const
+{
+    return p3d(x - other.x, y - other.y, z - other.z);
+}
+p3d p3d::operator+(const p3d &other) const
+{
+    return p3d(x + other.x, y + other.y, z + other.z);
+}
+p3d p3d::operator*(const double &mult) const
+{
+    return p3d(mult * x, mult * y, mult * z);
+}
 sphere::sphere(double _x, double _y, double _z, double _r, p3d _rgb) : x(_x), y(_y), z(_z), r(_r ), rgb(_rgb){}
 sphere::sphere() : x(0.0), y(0.0), z(0.0), r(0.0), rgb() {}

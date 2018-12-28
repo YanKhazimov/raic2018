@@ -14,6 +14,9 @@ struct p3d {
 
     p3d(double _x, double _y, double _z);
     p3d();
+    p3d operator- (const p3d& other) const;
+    p3d operator+ (const p3d& other) const;
+    p3d operator* (const double& mult) const;
 };
 
 struct sphere {
