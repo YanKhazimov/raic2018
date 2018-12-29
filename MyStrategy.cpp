@@ -91,15 +91,6 @@ void setSpeed(double value, p3d normal, Action& action)
     action.target_velocity_x = speedVec.x;
     action.target_velocity_y = speedVec.y;
     action.target_velocity_z = speedVec.z;
-//    if (eq(0.0, normal.x))
-//        action.target_velocity_z = sign(normal.z) * value;
-//    else if (eq(0.0, normal.z))
-//        action.target_velocity_x = sign(normal.x) * value;
-//    else
-//    {
-//        action.target_velocity_z = sign(normal.z) * sqrt(value * value / (1 + normal.x/normal.z * normal.x/normal.z));
-//        action.target_velocity_x = sign(normal.x) * fabs(action.target_velocity_z * normal.x/normal.z);
-//    }
 }
 
 void runTo(p3d to, const Robot& me, const Rules& rules, Action& action)
@@ -188,8 +179,7 @@ void MyStrategy::getBehindBall(const Robot& me, const Rules& rules, const Game& 
     else
         destination.x += game.ball.radius + me.radius;
 
-    m_spheres.push_back(sphere(destination.x, destination.y, destination.z,
-                               me.radius, p3d(0.0, 1.0, 0.0)));
+    m_spheres.push_back(sphere(destination, me.radius, p3d(0.0, 1.0, 0.0)));
 
     sprintTo(destination, me, rules, action);
 }
@@ -220,30 +210,6 @@ bool isCentering(const Rules& rules, const Game& game)
     return ball.z > rules.arena.depth/2 - rules.arena.corner_radius &&
             fabs(ball.x) > rules.arena.goal_width/2 &&
             (!x || (!z && sign(ball.x) == sign(game.ball.x) && fabs(game.ball.x) > rules.arena.goal_width/2));
-}
-
-void MyStrategy::shoot(const Robot& me, const Rules& rules, const Game& game, Action& action)
-{
-    p3d target;
-    if (isCentering(rules, game))
-    {
-        target = p3d();
-        m_text = "centering";
-        //m_spheres.push_back(sphere(target.x, target.y, target.z, me.radius, p3d(1.0, 0.0, 0.0)));
-        //runTo(target, me, rules, action);
-    }
-    else if (game.ball.z > rules.arena.depth/2 - rules.arena.corner_radius)
-    {
-        target = p3d(game.ball.x, game.ball.y, game.ball.z);
-        //m_text = "SHOOTABLE";
-        //runTo(target, me, rules, action);
-    }
-    else
-    {
-        target = p3d(game.ball.x, game.ball.y, game.ball.z);
-        //m_text = "";
-        //sprintTo(target, me, rules, action);
-    }
 }
 
 std::pair<p3d, double> dan_to_plane(p3d point, p3d point_on_plane, p3d plane_normal)
@@ -486,8 +452,8 @@ int timeToElevate(double height, const Robot &me, const Rules &rules)
     double myVY = me.velocity_y;
     while (myY < height)
     {
-        myY += myVY / TICKS;
         myVY = std::min(myVY + rules.ROBOT_ACCELERATION / TICKS, rules.ROBOT_MAX_JUMP_SPEED) - rules.GRAVITY / TICKS;
+        myY += myVY / TICKS;
         if (myVY < 0.0)
         {
             return -1;
@@ -500,9 +466,9 @@ int timeToElevate(double height, const Robot &me, const Rules &rules)
 
 bool isScorable(p3d ballPos, const Robot &me, const Rules& rules)
 {
-    return ballPos.x < 0.0 &&
-            ballPos.y < rules.arena.goal_height * 2 / 3 && ballPos.y > rules.arena.goal_height / 3 &&//timeToElevate(ballPos.y, me, rules) != -1 &&
-            ballPos.z > rules.arena.depth/2 - 2*rules.BALL_RADIUS;
+    return fabs(ballPos.x) < rules.arena.goal_width/2 - rules.BALL_RADIUS * 2 &&
+            ballPos.y < 6.5 &&
+            ballPos.z > rules.arena.depth/4;
 }
 
 bool MyStrategy::simulate(const Robot &me, const Rules& rules, const Game& game, int ticks, futurePoint& shootAt)
@@ -518,7 +484,7 @@ bool MyStrategy::simulate(const Robot &me, const Rules& rules, const Game& game,
             // rolling
             simulateRoll(ballpos, ballv, dan.first, rules);
             if (t % 10 == 0)
-                m_spheres.push_back(sphere(ballpos.x, ballpos.y, ballpos.z, rules.BALL_RADIUS, p3d(1.0, 0.0, 0.0)));
+                m_spheres.push_back(sphere(ballpos, rules.BALL_RADIUS, p3d(1.0, 0.0, 0.0)));
         }
         else
         {
@@ -526,13 +492,13 @@ bool MyStrategy::simulate(const Robot &me, const Rules& rules, const Game& game,
 
             if (isScorable(ballpos, me, rules))
             {
-                m_spheres.push_back(sphere(ballpos.x, ballpos.y, ballpos.z, rules.BALL_RADIUS, p3d(0.0, 0.0, 1.0)));
+                m_spheres.push_back(sphere(ballpos, rules.BALL_RADIUS, p3d(0.0, 0.0, 1.0)));
                 shootAt = { ballpos, t + 1 };
-                result = true;
+                return true;
             }
 
             else if (t % 10 == 0)
-                m_spheres.push_back(sphere(ballpos.x, ballpos.y, ballpos.z, rules.BALL_RADIUS, p3d(1.0, 0.0, 0.0)));
+                m_spheres.push_back(sphere(ballpos, rules.BALL_RADIUS, p3d(1.0, 0.0, 0.0)));
         }
     }
     return result;
@@ -551,31 +517,29 @@ void MyStrategy::act(const Robot& me, const Rules& rules, const Game& game, Acti
 
     if (m_role == Role::Attacker)
     {
+//        return;
 
-//        if (me.z + me.radius > game.ball.z)
-//            ;//getBehindBall(me, rules, game, action);
-//        else
+        if (me.z + me.radius > game.ball.z)
+        {
+            getBehindBall(me, rules, game, action);
+            m_text = "getting behind";
+        }
+        else
         {
             //if (isCentering(rules, game))
             futurePoint shootAt;
-            if (simulate(me, rules, game, 500, shootAt))
+            if (simulate(me, rules, game, 100, shootAt))
             {
-                m_spheres.push_back(sphere(shootAt.first.x, shootAt.first.y, shootAt.first.z, rules.BALL_RADIUS*1.1, p3d(0.0, 1.0, 0.0)));
-                m_text = interceptBounceAt2(hitPoint(shootAt, rules), me, rules, action) ? "YES" : "NO";
-                if (m_text == "YES")
-                {
-                    int st = 0;
-                }
+                m_spheres.push_back(sphere(shootAt.first, rules.BALL_RADIUS*1.1, p3d(0.0, 1.0, 0.0)));
+                m_text = "scoring - ";
+                m_text += shoot(shootAt, me, rules, action) ? "YES" : "NO";
+            }
+            else
+            {
+                sprintTo(p3d(game.ball.x, game.ball.y, game.ball.z), me, rules, action);
+                m_text = "dribbling";
             }
 
-//            shoot(me, rules, game, action);
-                //m_text = "";
-
-//                p3d ballPos(game.ball.x, game.ball.y, game.ball.z);
-//                sprintTo(ballPos, me, rules, action);
-//                if (distanceXZ(ballPos, p3d(me.x, me.y, me.z)) < game.ball.radius + 2 * me.radius &&
-//                        game.ball.y < 1.5 * game.ball.radius)
-//                    action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED;
         }
         return;
     }
@@ -661,30 +625,34 @@ bool MyStrategy::interceptBounceAt(const futurePoint& point, const Robot &me, co
     return false;
 }
 
-bool MyStrategy::interceptBounceAt2(futurePoint point, const Robot &me, const Rules &rules, Action &action)
+bool MyStrategy::shoot(futurePoint target, const Robot &me, const Rules &rules, Action &action)
 {
-    int sprintTime = 0, elevationTime = 0;
-    /*if (*/canReachInTime(point, me, rules, sprintTime, elevationTime);//)
+    int elevationTime = timeToElevate(target.first.y, me, rules);
+    if (elevationTime == -1)
+        return false;
+
+    int t = interceptionTime(target, me, rules);
+    int onPace = target.second - t;
+    m_text = std::to_string(onPace);
+
+    if (onPace < -10)
+        return false;
+
+    if (onPace <= 0)
     {
-        double desiredSpeed;
-        if (sprintTime >= point.second)
-        {
-            desiredSpeed = rules.ROBOT_MAX_GROUND_SPEED;
-            setSpeed(desiredSpeed, p3d(point.first.x - me.x, 0.0, point.first.z - me.z), action);
-        }
-        else
-        {
-            desiredSpeed = rules.ROBOT_MAX_GROUND_SPEED/2;//length(p3d(me.velocity_x, me.velocity_y, me.velocity_x));
-            setSpeed(desiredSpeed, p3d(point.first.x - me.x, 0.0, point.first.z - me.z), action);
-        }
-
-        if (elevationTime >= point.second)
-            action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED;
-
-        return true;
+        setSpeed(rules.ROBOT_MAX_GROUND_SPEED, p3d(target.first.x - me.x, 0.0, target.first.z - me.z), action);
+    }
+    else if (target.second > 0)
+    {
+        setSpeed(length(p3d(me.velocity_x, 0.0, me.velocity_z)) * t / target.second, p3d(target.first.x - me.x, 0.0, target.first.z - me.z), action);
     }
 
-    return false;
+    if (elevationTime >= target.second)
+    {
+        action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED;
+    }
+
+    return true;
 }
 
 void MyStrategy::C_defend(const Robot &me, const Rules &rules, const Game &game, Action &action)
@@ -838,7 +806,7 @@ bool MyStrategy::ballGoesToGoal(const Rules& rules, const Ball &ball, std::vecto
 
     getInterceptionPoints(rules, ball, secondsToGoalLine, interceptionPoints);
 
-    bool result = fabs(interceptionPoints.back().first.x) <= rules.arena.goal_width/2 - ball.radius &&
+    bool result = fabs(interceptionPoints.back().first.x) <= rules.arena.goal_width/2 - ball.radius/2 &&
             fabs(interceptionPoints.back().first.y) <= rules.arena.goal_height - ball.radius;
 
     return result;
@@ -848,14 +816,15 @@ int MyStrategy::interceptionTime(futurePoint at, const Robot &robot, const Rules
 {
     double myDistance = distanceXZ(p3d(robot.x, robot.y, robot.z), at.first);
     p3d normal(at.first.x - robot.x, 0.0, at.first.z - robot.z);
-    double vAlong = dot(normal, p3d(robot.velocity_x, 0, robot.velocity_z));
+    double normalLength = length(normal);
+    double vAlong = dot(normal, p3d(robot.velocity_x, 0, robot.velocity_z)) / normalLength;
     double distanceCovered = 0.0;
     int takesTicks = 0;
     while (distanceCovered < myDistance)
     {
-        distanceCovered += vAlong * (1.0 / TICKS);
         vAlong += rules.ROBOT_ACCELERATION * (1.0 / TICKS);
         vAlong = std::min(vAlong, rules.ROBOT_MAX_GROUND_SPEED);
+        distanceCovered += vAlong * (1.0 / TICKS);
         ++takesTicks;
     }
 
@@ -892,5 +861,6 @@ p3d p3d::operator*(const double &mult) const
 {
     return p3d(mult * x, mult * y, mult * z);
 }
+sphere::sphere(p3d pos, double _r, p3d _rgb) : x(pos.x), y(pos.y), z(pos.z), r(_r ), rgb(_rgb){}
 sphere::sphere(double _x, double _y, double _z, double _r, p3d _rgb) : x(_x), y(_y), z(_z), r(_r ), rgb(_rgb){}
 sphere::sphere() : x(0.0), y(0.0), z(0.0), r(0.0), rgb() {}
