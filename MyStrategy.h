@@ -32,19 +32,19 @@ struct sphere {
 };
 
 using namespace model;
-
 class MyStrategy : public Strategy {
 public:
     MyStrategy();
 
-    void act(const model::Robot& me, const model::Rules& rules, const model::Game& world, model::Action& action) override;
+    void act(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action) override;
 
     std::string custom_rendering() override;
 
     typedef std::pair<p3d, int> futurePoint;
 
-
 private:
+    const Robot* me; const Rules* rules; const Game* game; Action* action;
+
     std::string m_json;
     std::vector<sphere> m_spheres;
     int m_tick_spheres = -1;
@@ -58,28 +58,39 @@ private:
 
     Role m_role;
 
-    void getRole(const model::Robot& me, const model::Game& game);
+    void getRole();
 
     // COMMANDS
-    void C_defend(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action);
-    void getInterceptionPoints(const model::Rules& rules, const model::Ball &ball,
+    void C_defend();
+    void getInterceptionPoints(const model::Ball &ball,
                                double secondsForward, std::vector<futurePoint>& points);
-    bool ballGoesToGoal(const model::Rules& rules, const model::Ball &ball,
+    bool ballGoesToGoal(const model::Ball &ball,
                         std::vector<futurePoint > &interceptionPoints);
-    std::pair<int, int> pickInterceptionPoint(const std::vector<futurePoint>& interceptionPoints,
-                                              const model::Robot &me, const model::Rules &rules);
-    int interceptionTime(futurePoint at, const model::Robot& robot, const model::Rules& rules);
-    bool canReachInTime(futurePoint at, const model::Robot& me, const model::Rules& rules, int &sprintTime, int &elevationTime);
-    bool interceptBounceAt(const futurePoint& point, const model::Robot &me, const model::Rules &rules, model::Action &action);
-    bool shoot(futurePoint point, const model::Robot &me, const model::Rules &rules, model::Action &action);
-    p3d getGoalieDefaultPosition(const model::Rules& rules,
-                                 p3d ballPosition);
+    std::pair<int, int> pickInterceptionPoint(const std::vector<futurePoint>& interceptionPoints);
+    int interceptionTime(futurePoint at, const Robot *robot);
+    bool canReachInTime(futurePoint at, int &sprintTime, int &elevationTime);
+    bool interceptBounceAt(const futurePoint& point);
+    bool shoot(futurePoint point);
+    p3d getGoalieDefaultPosition(p3d ballPosition);
 
-    void C_bullyGoalie(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action);
-    void C_bullyAttacker(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action);
+    void C_bullyGoalie();
+    void C_bullyAttacker();
 
-    void getBehindBall(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action);
-    bool simulate(const Robot &me, const Rules& rules, const Game& game, int ticks, futurePoint &shootAt);
+    void getBehindBall();
+    bool simulate(int ticks, futurePoint &shootAt);
+
+    double brakeDistance(double initialSpeed);
+    p3d hitPoint(const p3d& iPoint);
+    MyStrategy::futurePoint hitPoint(const MyStrategy::futurePoint& iPoint);
+    void setSpeed(double value, p3d normal);
+    void runTo(p3d to);
+    void sprintTo(p3d to);
+    void simulateRoll(p3d& ballpos, p3d& ballv, const p3d& normal);
+    void simulateBounce(p3d& ballPos, p3d& ballv);
+    int timeToElevate(double height);
+    bool isScorable(p3d ballPos);
+
+
 
     std::string addSphere(double x, double y, double z, double r, p3d rgb);
     std::string addText(std::string text);
