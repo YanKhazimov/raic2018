@@ -7,6 +7,8 @@
 
 #include "Strategy.h"
 
+//#define debugging_spheres_yan true
+
 struct p3d {
     double x;
     double y;
@@ -50,8 +52,6 @@ public:
         futurePoint(p3d _pos, p3d _v, int _t);
     };
 
-    //typedef std::pair<p3d, int> futurePoint;
-
 private:
     const Robot* me; const Rules* rules; const Game* game; Action* action;
 
@@ -59,6 +59,7 @@ private:
     std::vector<sphere> m_spheres;
     int m_tick_spheres = -1;
     std::string m_text;
+    const int criticalPaceDiff = 6;
 
     enum Role {
         Unassigned = 0,
@@ -80,30 +81,31 @@ private:
     int interceptionTime(futurePoint at, const Robot *robot);
     bool canReachInTime(futurePoint at, int &sprintTime, int &elevationTime);
     bool interceptBounceAt(const futurePoint& point);
-    bool shoot(futurePoint point);
+    std::pair<int, int> measureShot(futurePoint point);
     p3d getGoalieDefaultPosition(p3d ballPosition);
 
     void C_bullyGoalie();
     void C_bullyAttacker();
 
     void getBehindBall();
-    bool simulate(int ticks, futurePoint &shootAt);
+
+    bool pickShootingPoint(int ticks, futurePoint& bestTarget, int &shootingPace, int &elevationTime);
+    void intercept(const std::vector<futurePoint>& interceptionPoints, bool homeOnly);
 
     double brakeDistance(double initialSpeed);
     p3d hitPoint(const p3d& iPoint);
     futurePoint hitPoint(const MyStrategy::futurePoint& iPoint);
     void setSpeed(double value, p3d normal);
     void runTo(p3d to);
-    void sprintTo(p3d to);
+    void sprintTo(p3d to, bool jump);
     void simulateRoll(p3d& ballpos, p3d& ballv, const p3d& normal);
     void simulateBounce(p3d& ballPos, p3d& ballv);
     int timeToElevate(double height);
-    bool isScorable(p3d ballPos);
+    bool inGoalSector(p3d ballPos, int &xshift);
 
-
-
-    std::string addSphere(double x, double y, double z, double r, p3d rgb);
-    std::string addText(std::string text);
+    void addSphere(sphere s);
+    std::string logSphere(double x, double y, double z, double r, p3d rgb);
+    std::string logText(std::string text);
 };
 
 #endif

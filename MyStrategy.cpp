@@ -105,9 +105,11 @@ void MyStrategy::runTo(p3d to)
     }
 }
 
-void MyStrategy::sprintTo(p3d to)
+void MyStrategy::sprintTo(p3d to, bool jump)
 {
     setSpeed(rules->ROBOT_MAX_GROUND_SPEED, p3d(to.x - me->x, 0.0, to.z - me->z));
+    if (jump && distanceXZ(to, p3d(me->x, me->y, me->z)) < rules->BALL_RADIUS + me->radius*1.5)
+        action->jump_speed = rules->ROBOT_MAX_JUMP_SPEED;
 }
 
 void MyStrategy::C_bullyGoalie()
@@ -125,7 +127,7 @@ void MyStrategy::C_bullyGoalie()
         }
     }
 
-    sprintTo(goaliePos);
+    sprintTo(goaliePos, false);
 }
 
 void MyStrategy::C_bullyAttacker()
@@ -143,7 +145,7 @@ void MyStrategy::C_bullyAttacker()
         }
     }
 
-    sprintTo(goaliePos);
+    sprintTo(goaliePos, false);
 }
 
 void MyStrategy::getRole()
@@ -176,9 +178,9 @@ void MyStrategy::getBehindBall()
     else
         destination.x += game->ball.radius + me->radius;
 
-    m_spheres.push_back(sphere(destination, me->radius, p3d(0.0, 1.0, 0.0)));
+    addSphere(sphere(destination, me->radius, p3d(0.0, 1.0, 0.0)));
 
-    sprintTo(destination);
+    sprintTo(destination, false);
 }
 
 bool isRolling(const model::Ball& ball)
@@ -461,44 +463,81 @@ int MyStrategy::timeToElevate(double height)
     return ticksToGoUp;
 }
 
-bool MyStrategy::isScorable(p3d ballPos)
+bool MyStrategy::inGoalSector(p3d ballPos, int& xshift)
 {
-    return fabs(ballPos.x) < rules->arena.goal_width/2 - rules->BALL_RADIUS * 2 &&
-            ballPos.y < 6.5 &&
-            ballPos.z > rules->arena.depth/4;
+    p3d directionToBall = normalize(ballPos - p3d(me->x, me->y, me->z));
+    p3d rightTopCorner = p3d(-rules->arena.goal_width/2 + game->ball.radius, rules->arena.goal_height - game->ball.radius, rules->arena.depth/2);
+    p3d directionToRightTopCorner = normalize(rightTopCorner - p3d(me->x, me->y, me->z));
+    p3d leftBottomCorner = p3d(rules->arena.goal_width/2 - game->ball.radius, game->ball.radius, rules->arena.depth/2);
+    p3d directionToLeftBottomCorner = normalize(leftBottomCorner - p3d(me->x, me->y, me->z));
+
+    xshift = 0;
+    if (directionToRightTopCorner.x > directionToBall.x)
+        xshift = -1;
+    if (directionToBall.x > directionToLeftBottomCorner.x)
+        xshift = 1;
+
+    return directionToRightTopCorner.x <= directionToBall.x && directionToBall.x <= directionToLeftBottomCorner.x
+            && directionToRightTopCorner.y >= directionToBall.y && directionToBall.y >= directionToLeftBottomCorner.y
+            && directionToBall.z > 0.0;
 }
 
-bool MyStrategy::simulate(int ticks, futurePoint& shootAt)
+void MyStrategy::addSphere(sphere s)
+{
+#ifdef debugging_spheres_yan
+    m_spheres.push_back(s);
+#endif
+}
+
+bool MyStrategy::pickShootingPoint(int ticks, futurePoint& bestTarget, int& bestPace, int& bestElevationTime)
 {
     p3d ballpos(game->ball.x,game->ball.y, game->ball.z);
     p3d ballv(game->ball.velocity_x, game->ball.velocity_y, game->ball.velocity_z);
-    bool result = false;
+    int checkStep = 10;
+    bestPace = -100;
+    bestElevationTime = -100;
     for (int t = 0; t < ticks; ++t)
     {
         std::pair<p3d, double> dan = dan_to_arena(ballpos, rules->arena);
-        if (dan.second < game->ball.radius + 0.01 && dot(ballv, dan.first) < 0.0)
+        bool rolling = dan.second < game->ball.radius + 0.01 && dot(ballv, dan.first) < 0.0;
+        if (rolling)
         {
-            // rolling
             simulateRoll(ballpos, ballv, dan.first);
-            if (t % 10 == 0)
-                m_spheres.push_back(sphere(ballpos, rules->BALL_RADIUS, p3d(1.0, 0.0, 0.0)));
         }
         else
         {
+            // bouncing
             simulateBounce(ballpos, ballv);
+        }
 
-            if (isScorable(ballpos))
+        if (t % checkStep == 0)
+        {
+            int xshift;
+            if (inGoalSector(ballpos, xshift))
             {
-                m_spheres.push_back(sphere(ballpos, rules->BALL_RADIUS, p3d(0.0, 0.0, 1.0)));
-                shootAt = futurePoint(ballpos, p3d(), t + 1);
-                return true;
-            }
+                checkStep = 2;
+                addSphere(sphere(ballpos, rules->BALL_RADIUS, p3d(0.0, 0.0, 1.0)));
+                futurePoint target(ballpos, ballv, t + 1);
 
-            else if (t % 10 == 0)
-                m_spheres.push_back(sphere(ballpos, rules->BALL_RADIUS, p3d(1.0, 0.0, 0.0)));
+                int pace, elevationTime;
+                std::tie(pace, elevationTime) = measureShot(target);
+
+                if (elevationTime != -1 &&
+                        (abs(pace) < abs(bestPace) || (abs(pace) == abs(bestPace) && pace > bestPace)))
+                {
+                    bestPace = pace;
+                    bestElevationTime = elevationTime;
+                    bestTarget = target;
+                }
+            }
+            else
+            {
+                checkStep = 10;
+                addSphere(sphere(ballpos, rules->BALL_RADIUS, p3d(1.0, 0.0, 0.0)));
+            }
         }
     }
-    return result;
+    return abs(bestPace) < criticalPaceDiff && bestElevationTime != -1;
 }
 
 void MyStrategy::act(const Robot& _me, const Rules& _rules, const Game& _game, Action& _action)
@@ -516,8 +555,6 @@ void MyStrategy::act(const Robot& _me, const Rules& _rules, const Game& _game, A
 
     if (m_role == Role::Attacker)
     {
-//        return;
-
         if (me->z + me->radius > game->ball.z)
         {
             getBehindBall();
@@ -527,16 +564,34 @@ void MyStrategy::act(const Robot& _me, const Rules& _rules, const Game& _game, A
         {
             //if (isCentering(rules, game))
             futurePoint shootAt;
-            if (simulate(100, shootAt))
+            int shootingPace, elevationTime;
+            if (pickShootingPoint(200, shootAt, shootingPace, elevationTime))
             {
-                m_spheres.push_back(sphere(shootAt.pos, rules->BALL_RADIUS*1.1, p3d(0.0, 1.0, 0.0)));
-                m_text = "scoring - ";
-                m_text += shoot(shootAt) ? "YES" : "NO";
+                addSphere(sphere(shootAt.pos, rules->BALL_RADIUS*1.1, p3d(0.0, 1.0, 0.0)));
+                if (abs(shootingPace) < criticalPaceDiff)
+                {
+                    addSphere(sphere(shootAt.pos, rules->BALL_RADIUS, p3d(0.0, 1.0, 0.0)));
+
+                    if (shootingPace <= 0)
+                        setSpeed(rules->ROBOT_MAX_GROUND_SPEED, p3d(shootAt.pos.x - me->x, 0.0, shootAt.pos.z - me->z));
+                    else
+                        setSpeed(length(p3d(me->velocity_x, 0.0, me->velocity_z)) * (shootAt.t - shootingPace) / shootAt.t, p3d(shootAt.pos.x - me->x, 0.0, shootAt.pos.z - me->z));
+
+                    if (elevationTime >= shootAt.t)
+                    {
+                        action->jump_speed = rules->ROBOT_MAX_JUMP_SPEED;
+                    }
+                }
+                else
+                {
+                    m_text = "DEBUG ME!";
+                }
             }
             else
             {
-                sprintTo(p3d(game->ball.x, game->ball.y, game->ball.z));
-                m_text = "dribbling";
+                std::vector<futurePoint> points;
+                getInterceptionPoints(game->ball, 2.0, points);
+                intercept(points, false);
             }
         }
         return;
@@ -545,7 +600,7 @@ void MyStrategy::act(const Robot& _me, const Rules& _rules, const Game& _game, A
     C_defend();
 }
 
-std::string MyStrategy::addSphere(double x, double y, double z, double r, p3d rgb)
+std::string MyStrategy::logSphere(double x, double y, double z, double r, p3d rgb)
 {
     std::string sphere;
 
@@ -562,7 +617,7 @@ std::string MyStrategy::addSphere(double x, double y, double z, double r, p3d rg
     return sphere;
 }
 
-std::string MyStrategy::addText(std::string text)
+std::string MyStrategy::logText(std::string text)
 {
     return "{\"Text\":\"" + text + "\"}";
 }
@@ -572,9 +627,9 @@ std::string MyStrategy::custom_rendering()
     m_json = "[";
 
     for (sphere sph: m_spheres)
-        m_json += addSphere(sph.x, sph.y, sph.z, sph.r, sph.rgb) + ",";
+        m_json += logSphere(sph.x, sph.y, sph.z, sph.r, sph.rgb) + ",";
 
-    m_json += addText(m_text);
+    m_json += logText(m_text);
 
     m_json += "]";
 
@@ -617,34 +672,43 @@ bool MyStrategy::interceptBounceAt(const futurePoint& point)
     return false;
 }
 
-bool MyStrategy::shoot(futurePoint target)
+std::pair<int, int> MyStrategy::measureShot(futurePoint target)
 {
     int elevationTime = timeToElevate(target.pos.y);
     if (elevationTime == -1)
-        return false;
+        return { -criticalPaceDiff, -1 };
 
     int t = interceptionTime(target, me);
-    int onPace = target.t - t;
-    m_text = std::to_string(onPace);
+    int pace = target.t - t;
+    m_text = std::to_string(pace);
 
-    if (onPace < -10)
-        return false;
+    return { pace, elevationTime };
+}
 
-    if (onPace <= 0)
+void MyStrategy::intercept(const std::vector<futurePoint>& interceptionPoints, bool homeOnly)
+{
+    int interceptionTime = 0, iPointIndex = -1;
+    std::tie(iPointIndex, interceptionTime) = pickInterceptionPoint(interceptionPoints);
+
+    if (iPointIndex < 0 || iPointIndex >= interceptionPoints.size())
+        return;
+
+    futurePoint iPoint = interceptionPoints[static_cast<unsigned int>(iPointIndex)];
+    if (homeOnly && iPoint.pos.z > 0.0)
+        return;
+
+    if (isRolling(game->ball))
     {
-        setSpeed(rules->ROBOT_MAX_GROUND_SPEED, p3d(target.pos.x - me->x, 0.0, target.pos.z - me->z));
+        if (iPointIndex == 1)
+            iPoint = interceptionPoints[0];
+        sprintTo(iPoint.pos, true);
     }
-    else if (target.t > 0)
+    else
     {
-        setSpeed(length(p3d(me->velocity_x, 0.0, me->velocity_z)) * t / target.t, p3d(target.pos.x - me->x, 0.0, target.pos.z - me->z));
+        // ball is bouncing
+        futurePoint pointToHit = hitPoint(iPoint);
+        interceptBounceAt(pointToHit);
     }
-
-    if (elevationTime >= target.t)
-    {
-        action->jump_speed = rules->ROBOT_MAX_JUMP_SPEED;
-    }
-
-    return true;
 }
 
 void MyStrategy::C_defend()
@@ -656,34 +720,7 @@ void MyStrategy::C_defend()
     bool onTarget = ballGoesToGoal(game->ball, interceptionPoints);
     if (onTarget)
     {
-        int interceptionTime = 0, iPointIndex = -1;
-        std::tie(iPointIndex, interceptionTime) = pickInterceptionPoint(interceptionPoints);
-
-        futurePoint iPoint = interceptionPoints[static_cast<unsigned int>(iPointIndex)];
-        if (iPoint.pos.z > 0.0)
-            return;
-
-        //m_text = (interceptionTime <= iPoint.second) ? "can intercept" : "CAN'T INTERCEPT";
-
-//        m_spheres.push_back(sphere(iPoint.first.x, iPoint.first.y, iPoint.first.z,
-//                                   game->ball.radius*1.2, p3d(1.0, 0.0, 0.0)));
-
-        if (isRolling(game->ball))
-        {
-            if (iPointIndex == 1)
-                iPoint = interceptionPoints[0];
-            sprintTo(iPoint.pos);
-
-            double distance = distanceXZ(/*iPoint.first*/p3d(game->ball.x, game->ball.y, game->ball.z), p3d(me->x, me->y, me->z));
-            if (distance < 2 * me->radius + game->ball.radius)
-                action->jump_speed = rules->ROBOT_MAX_JUMP_SPEED;
-        }
-        else
-        {
-            // ball is bouncing
-            futurePoint pointToHit = hitPoint(iPoint);
-            interceptBounceAt(pointToHit);
-        }
+        intercept(interceptionPoints, true);
     }
     else
     {
@@ -706,7 +743,7 @@ void MyStrategy::C_defend()
                 return;
         }
 
-        sprintTo(ballPos);
+        sprintTo(ballPos, true);
     }
 }
 
@@ -770,10 +807,10 @@ void MyStrategy::getInterceptionPoints(const Ball &ball, double secondsForward, 
 
     points.push_back(futurePoint(p3d(ballPos.x, ballPos.y, ballPos.z), p3d(), ticks));
 
-    for (auto ip: points)
-    {
-        //m_spheres.push_back(sphere(ip.first.x, ip.first.y, ip.first.z, ball.radius, p3d(0.0, 0.0, 1.0)));
-    }
+//    for (auto ip: points)
+//    {
+//        addSphere(sphere(ip.pos, ball.radius, p3d(0.0, 0.0, 1.0)));
+//    }
 }
 
 bool MyStrategy::ballGoesToGoal(const Ball &ball, std::vector<futurePoint>& interceptionPoints)
