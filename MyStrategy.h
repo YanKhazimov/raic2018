@@ -40,7 +40,17 @@ public:
 
     std::string custom_rendering() override;
 
-    typedef std::pair<p3d, int> futurePoint;
+    struct futurePoint
+    {
+        p3d pos;
+        p3d v;
+        int t;
+
+        futurePoint();
+        futurePoint(p3d _pos, p3d _v, int _t);
+    };
+
+    //typedef std::pair<p3d, int> futurePoint;
 
 private:
     const Robot* me; const Rules* rules; const Game* game; Action* action;
@@ -81,7 +91,7 @@ private:
 
     double brakeDistance(double initialSpeed);
     p3d hitPoint(const p3d& iPoint);
-    MyStrategy::futurePoint hitPoint(const MyStrategy::futurePoint& iPoint);
+    futurePoint hitPoint(const MyStrategy::futurePoint& iPoint);
     void setSpeed(double value, p3d normal);
     void runTo(p3d to);
     void sprintTo(p3d to);
