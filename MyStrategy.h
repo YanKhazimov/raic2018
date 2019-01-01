@@ -82,7 +82,7 @@ private:
     bool canReachInTime(futurePoint at, int &sprintTime, int &elevationTime);
     bool interceptBounceAt(const futurePoint& point);
     std::pair<int, int> measureShot(futurePoint point);
-    p3d getGoalieDefaultPosition(p3d ballPosition);
+    p3d getGoalieDefaultPosition(const model::Ball &ball);
 
     void C_bullyGoalie();
     void C_bullyAttacker();
@@ -93,8 +93,7 @@ private:
     void intercept(const std::vector<futurePoint>& interceptionPoints, bool homeOnly);
 
     double brakeDistance(double initialSpeed);
-    p3d hitPoint(const p3d& iPoint);
-    futurePoint hitPoint(const MyStrategy::futurePoint& iPoint);
+    futurePoint hitPoint(const MyStrategy::futurePoint& center);
     void setSpeed(double value, p3d normal);
     void runTo(p3d to);
     void sprintTo(p3d to, bool jump);

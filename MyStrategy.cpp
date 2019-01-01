@@ -26,6 +26,11 @@ double MyStrategy::brakeDistance(double initialSpeed)
     return result;
 }
 
+double sign(double x)
+{
+    return static_cast<double>((0.0 < x) - (x < 0.0));
+}
+
 bool eq(double a, double b)
 {
     return fabs(a - b) <= std::numeric_limits<double>::epsilon();
@@ -54,34 +59,39 @@ double dot(const p3d& a, const p3d& b)
     return std::inner_product(av.begin(), av.end(), bv.begin(), 0.0);
 }
 
-p3d MyStrategy::hitPoint(const p3d& iPoint)
+MyStrategy::futurePoint MyStrategy::hitPoint(const MyStrategy::futurePoint& center)
 {
-    return p3d(iPoint.x, iPoint.y - rules->BALL_RADIUS/2, iPoint.z - rules->BALL_RADIUS/2);
+    //double xzRatio = fabs(center.v.z) / std::max(0.0001, fabs(center.v.x));
+
+    p3d hit(center.pos.x - sign(center.v.x) * rules->BALL_RADIUS/2, // clear along Vx
+            center.pos.y - rules->BALL_RADIUS/2,
+            center.pos.z - rules->BALL_RADIUS/2);
+    return futurePoint(hit, center.v, center.t);
 }
 
-MyStrategy::futurePoint MyStrategy::hitPoint(const MyStrategy::futurePoint& iPoint)
+p3d MyStrategy::getGoalieDefaultPosition(const Ball& ball)
 {
-    return futurePoint(hitPoint(iPoint.pos), p3d(), iPoint.t);
-}
-
-p3d MyStrategy::getGoalieDefaultPosition(p3d ballPosition)
-{
+    p3d ballPosition(ball.x, ball.y, ball.z);
     const Arena& arena = rules->arena;
 
     // by bissectrisa
     double d1 = distanceXZ(ballPosition, {-arena.goal_width/2, 0, -arena.depth/2});
     double d2 = distanceXZ(ballPosition, {arena.goal_width/2, 0, -arena.depth/2});
 
-    double x = -arena.goal_width/2 + arena.goal_width * d1 / (d1 + d2);
+    double goalieX = -arena.goal_width/2 + arena.goal_width * d1 / (d1 + d2);
 
-    p3d result {x, 0.0, -arena.depth/2};
+    double goalieZ = -arena.depth/2;
+    int ballTimeToGoalLine = static_cast<int>((ball.z - (-rules->arena.depth/2)) / (ball.velocity_z / TICKS));
+    if (ballTimeToGoalLine < 0)
+        ballTimeToGoalLine = 100;
+
+    int myTimeToGoalLine = interceptionTime(futurePoint(p3d(goalieX, 0.0, -rules->arena.depth/2), p3d(), 0), me);
+    if (myTimeToGoalLine < ballTimeToGoalLine)
+        goalieZ -= arena.goal_depth - arena.bottom_radius;
+
+    p3d result {goalieX, 0.0, goalieZ};
 
     return result;
-}
-
-double sign(double x)
-{
-    return static_cast<double>((0.0 < x) - (x < 0.0));
 }
 
 void MyStrategy::setSpeed(double value, p3d normal)
@@ -713,7 +723,7 @@ void MyStrategy::intercept(const std::vector<futurePoint>& interceptionPoints, b
 
 void MyStrategy::C_defend()
 {
-    p3d pos = getGoalieDefaultPosition({ game->ball.x, game->ball.y, game->ball.z });
+    p3d pos = getGoalieDefaultPosition(game->ball);
     runTo(pos);
 
     std::vector<futurePoint> interceptionPoints;
@@ -778,7 +788,9 @@ void MyStrategy::getInterceptionPoints(const Ball &ball, double secondsForward, 
                 ((ballVy < 0.0 && ballPos.y < 2 * ball.radius) || (ballVy > 0.0 && ballPos.y < 2 * ball.radius)))
         {
             if (!rolling)
-                points.push_back(futurePoint(p3d(ballPos.x, ballPos.y, ballPos.z), p3d(), t));
+                points.push_back(futurePoint(p3d(ballPos.x, ballPos.y, ballPos.z),
+                                             p3d(ball.velocity_x, ballVy, ball.velocity_z),
+                                             t));
             newInterval = false;
         }
 
@@ -794,18 +806,22 @@ void MyStrategy::getInterceptionPoints(const Ball &ball, double secondsForward, 
     if (rolling)
     {
         int count = 10;
-        points.push_back(futurePoint(p3d(ball.x, ball.y, ball.z), p3d(), 0));
+        points.push_back(futurePoint(p3d(ball.x, ball.y, ball.z),
+                                     p3d(ball.velocity_x, ballVy, ball.velocity_z),
+                                     0));
         for (int i = count - 1; i > 0; --i)
         {
             points.push_back(futurePoint(p3d(ballPos.x + (ball.x - ballPos.x) / count * i,
                                              ballPos.y + (ball.y - ballPos.y) / count * i,
                                              ballPos.z + (ball.z - ballPos.z) / count * i),
-                                         p3d(),
+                                         p3d(ball.velocity_x, ballVy, ball.velocity_z),
                                          static_cast<int>(secondsForward * TICKS / count * (count - i))));
         }
     }
 
-    points.push_back(futurePoint(p3d(ballPos.x, ballPos.y, ballPos.z), p3d(), ticks));
+    points.push_back(futurePoint(p3d(ballPos.x, ballPos.y, ballPos.z),
+                                 p3d(ball.velocity_x, ballVy, ball.velocity_z),
+                                 ticks));
 
 //    for (auto ip: points)
 //    {
