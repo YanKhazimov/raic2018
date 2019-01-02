@@ -60,6 +60,7 @@ private:
     int m_tick_spheres = -1;
     std::string m_text;
     const int criticalPaceDiff = 6;
+    //int m_clearerId = -1;
 
     enum Role {
         Unassigned = 0,
@@ -70,9 +71,11 @@ private:
     Role m_role;
 
     void getRole();
+    int getTeammateIdx();
 
     // COMMANDS
     void C_defend();
+    void C_attack();
     void getInterceptionPoints(const model::Ball &ball,
                                double secondsForward, std::vector<futurePoint>& points);
     bool ballGoesToGoal(const model::Ball &ball,
@@ -87,7 +90,7 @@ private:
     void C_bullyGoalie();
     void C_bullyAttacker();
 
-    void getBehindBall();
+    void getBehindObject(p3d pos, double r);
 
     bool pickShootingPoint(int ticks, futurePoint& bestTarget, int &shootingPace, int &elevationTime);
     void intercept(const std::vector<futurePoint>& interceptionPoints, bool homeOnly);
