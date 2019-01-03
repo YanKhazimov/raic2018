@@ -576,7 +576,7 @@ void MyStrategy::act(const Robot& _me, const Rules& _rules, const Game& _game, A
 
     if (m_role == Role::Attacker)
     {
-        //C_attack();
+        C_attack();
         return;
     }
 
