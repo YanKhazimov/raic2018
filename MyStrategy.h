@@ -60,7 +60,7 @@ private:
     int m_tick_spheres = -1;
     std::string m_text;
     const int criticalPaceDiff = 6;
-    //int m_clearerId = -1;
+    int m_clearerId = -1;
 
     enum Role {
         Unassigned = 0,
@@ -71,7 +71,7 @@ private:
     Role m_role;
 
     void getRole();
-    int getTeammateIdx();
+    std::pair<int, int> getTeammate(); // id, idx
 
     // COMMANDS
     void C_defend();

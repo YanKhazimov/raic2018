@@ -160,20 +160,20 @@ void MyStrategy::C_bullyAttacker()
 
 void MyStrategy::getRole()
 {
-//    if (me->id == m_clearerId)
-//    {
-//        m_role = Role::Goalie;
-//        return;
-//    }
+    if (me->id == m_clearerId)
+    {
+        m_role = Role::Goalie;
+        return;
+    }
 
-    int teammateIdx = getTeammateIdx();
-//    if (teammateIdx == m_clearerId)
-//    {
-//        m_role = Role::Attacker;
-//        return;
-//    }
+    auto teammate = getTeammate();
+    if (teammate.first == m_clearerId)
+    {
+        m_role = Role::Attacker;
+        return;
+    }
 
-    const Robot* mate = &game->robots[teammateIdx];
+    const Robot* mate = &game->robots[teammate.second];
 
     if (mate->z < me->z ||
             (eq(mate->z, me->z) && mate->velocity_z < me->velocity_z) ||
@@ -187,14 +187,14 @@ void MyStrategy::getRole()
     }
 }
 
-int MyStrategy::getTeammateIdx()
+std::pair<int, int> MyStrategy::getTeammate()
 {
     for (int i = 0; i < game->robots.size(); ++i)
     {
         if (game->robots[i].player_id != me->player_id || game->robots[i].id == me->id)
             continue;
 
-        return i;
+        return { game->robots[i].id, i };
     }
 }
 
@@ -577,7 +577,7 @@ void MyStrategy::act(const Robot& _me, const Rules& _rules, const Game& _game, A
     {
         m_spheres.clear();
         m_tick_spheres = game->current_tick;
-        m_text = "";
+        //m_text = "";
     }
 
     getRole();
@@ -671,7 +671,7 @@ std::pair<int, int> MyStrategy::measureShot(futurePoint target)
 
     int t = interceptionTime(target, me);
     int pace = target.t - t;
-    m_text = std::to_string(pace);
+    //m_text = std::to_string(pace);
 
     return { pace, elevationTime };
 }
@@ -688,7 +688,9 @@ void MyStrategy::intercept(const std::vector<futurePoint>& interceptionPoints, b
     if (homeOnly && iPoint.pos.z > 0.0)
         return;
 
-    //m_clearerId = me->id;
+    if (m_role == Role::Goalie)
+        m_clearerId = me->id;
+
     if (isRolling(game->ball))
     {
         if (iPointIndex == 1)
@@ -705,22 +707,12 @@ void MyStrategy::intercept(const std::vector<futurePoint>& interceptionPoints, b
 
 void MyStrategy::C_attack()
 {
-    //if (m_clearerId == getTeammateIdx())
+    auto teammate = getTeammate();
+    if (m_clearerId == teammate.first)
     {
-//        int teammateIdx = getTeammateIdx();
-//        const Robot* teammate = &game->robots[teammateIdx];
-//        if (me->z > teammate->z)
-//        {
-//            getBehindObject(p3d(teammate->x, teammate->y, teammate->z), teammate->radius);
-//        }
-//        else
-//        {
-//            p3d pos = getGoalieDefaultPosition(game->ball);
-//            runTo(pos);
-//        }
-        //m_text = "bullying attacker";
-        //C_bullyAttacker();
-
+        action->target_velocity_x = game->robots[teammate.second].velocity_x;
+        action->target_velocity_y = game->robots[teammate.second].velocity_y;
+        action->target_velocity_z = game->robots[teammate.second].velocity_z;
         return;
     }
 
@@ -767,8 +759,8 @@ void MyStrategy::C_attack()
 
 void MyStrategy::C_defend()
 {
-//    if (m_clearerId == me->id)
-//        m_clearerId = -1;
+    if (m_clearerId == me->id)
+        m_clearerId = -1;
 
     p3d pos = getGoalieDefaultPosition(game->ball);
     runTo(pos);
@@ -793,16 +785,17 @@ void MyStrategy::C_defend()
 
         for (const Robot& r: game->robots)
         {
-            if (r.id == me->id && r.player_id == me->player_id)
+            if (/*r.id == me->id && */r.player_id == me->player_id)
                 continue;
 
             if (myDistance > distanceXZ(ballPos, p3d(r.x, r.y, r.z)))
                 return;
         }
 
-        //m_clearerId = me->id;
+        m_clearerId = me->id;
         sprintTo(ballPos, true);
     }
+    m_text = std::to_string(m_clearerId);
 }
 
 void MyStrategy::getInterceptionPoints(const Ball &ball, double secondsForward, std::vector<futurePoint>& points)
