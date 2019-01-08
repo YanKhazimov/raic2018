@@ -76,7 +76,7 @@ private:
     // COMMANDS
     void C_defend();
     void C_attack();
-    void getInterceptionPoints(const model::Ball &ball,
+    void getInterceptionPoints(model::Ball ball,
                                double secondsForward, std::vector<futurePoint>& points);
     bool ballGoesToGoal(const model::Ball &ball,
                         std::vector<futurePoint > &interceptionPoints);
@@ -102,6 +102,7 @@ private:
     void sprintTo(p3d to, bool jump);
     void simulateRoll(p3d& ballpos, p3d& ballv, const p3d& normal);
     void simulateBounce(p3d& ballPos, p3d& ballv);
+    void simulateTick(p3d& ballpos, p3d& ballv);
     int timeToElevate(double height);
     bool inGoalSector(p3d ballPos, int &xshift);
 
