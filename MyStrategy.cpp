@@ -49,7 +49,7 @@ double length(p3d a)
 p3d normalize(p3d v)
 {
     double l = length(v);
-    return p3d(v.x/l, v.y/l, v.z/l);
+    return eq(l, 0.0) ? p3d() : p3d(v.x/l, v.y/l, v.z/l);
 }
 
 double dot(const p3d& a, const p3d& b)
@@ -59,11 +59,9 @@ double dot(const p3d& a, const p3d& b)
     return std::inner_product(av.begin(), av.end(), bv.begin(), 0.0);
 }
 
-MyStrategy::futurePoint MyStrategy::hitPoint(const MyStrategy::futurePoint& center)
+MyStrategy::futurePoint MyStrategy::hitPoint(const MyStrategy::futurePoint& center, double xshift)
 {
-    //double xzRatio = fabs(center.v.z) / std::max(0.0001, fabs(center.v.x));
-
-    p3d hit(center.pos.x - sign(center.v.x) * rules->BALL_RADIUS/2, // clear along Vx
+    p3d hit(center.pos.x + xshift,
             center.pos.y - rules->BALL_RADIUS/2,
             center.pos.z - rules->BALL_RADIUS/2);
     return futurePoint(hit, center.v, center.t);
@@ -207,7 +205,7 @@ void MyStrategy::getBehindObject(p3d pos, double r)
     else
         destination.x += r + me->radius;
 
-    addSphere(sphere(destination, me->radius, p3d(0.0, 1.0, 0.0)));
+    //addSphere(sphere(destination, me->radius, p3d(0.0, 1.0, 0.0)));
 
     sprintTo(destination, false);
 }
@@ -473,6 +471,19 @@ void MyStrategy::simulateBounce(p3d& ballPos, p3d& ballv)
     }
 }
 
+double MyStrategy::maxElevation()
+{
+    double myY = me->radius;
+    double myVY = rules->ROBOT_MAX_JUMP_SPEED;
+    while (myVY > 0.0)
+    {
+        myVY -= rules->GRAVITY / TICKS;
+        myY += myVY / TICKS;
+    }
+
+    return myY;
+}
+
 int MyStrategy::timeToElevate(double height)
 {
     int ticksToGoUp = 0;
@@ -589,7 +600,7 @@ void MyStrategy::act(const Robot& _me, const Rules& _rules, const Game& _game, A
 
     if (m_role == Role::Attacker)
     {
-        //C_attack();
+        C_attack();
         return;
     }
 
@@ -705,8 +716,58 @@ void MyStrategy::intercept(const std::vector<futurePoint>& interceptionPoints, b
     else
     {
         // ball is bouncing
-        futurePoint pointToHit = hitPoint(iPoint);
+        double xshift = -sign(iPoint.v.x) * rules->BALL_RADIUS/2; // clear along Vx
+        futurePoint pointToHit = hitPoint(iPoint, xshift);
         interceptBounceAt(pointToHit);
+    }
+}
+
+int MyStrategy::timeToRunTo(p3d pos)
+{
+    double distXZ = distanceXZ(pos, p3d(me->x, 0.0, me->z));
+
+    return 1 + static_cast<int>(1.25 * distXZ / (rules->ROBOT_MAX_GROUND_SPEED/TICKS));
+}
+
+void MyStrategy::getBehindBall(Ball ball)
+{
+    p3d ballpos(ball.x, ball.y, ball.z);
+    p3d ballv(ball.velocity_x, ball.velocity_y, ball.velocity_z);
+
+    double maxJumpHeight = maxElevation();
+
+    for (int t = 1; t < 200; ++t)
+    {
+        simulateTick(ballpos, ballv);
+
+        if (ballv.y >= rules->ROBOT_MAX_GROUND_SPEED)
+        {
+            // can't keep up speed
+            addSphere(sphere(ballpos, ball.radius, p3d(1.0, 0.0, 0.0)));
+            continue;
+        }
+
+        futurePoint hitPos = hitPoint(futurePoint(ballpos, ballv, t), 0.0);
+        if (hitPos.pos.y >= maxJumpHeight + me->radius/2)
+        {
+            // too high
+            addSphere(sphere(ballpos, ball.radius, p3d(1.0, 0.0, 0.0)));
+            continue;
+        }
+
+        int tElevate = timeToElevate(hitPos.pos.y - me->radius/2);
+        int tRun = timeToRunTo(p3d(hitPos.pos.x, 0.0, hitPos.pos.z));
+
+        if (tRun + tElevate > t)
+        {
+            // too far
+            addSphere(sphere(ballpos, ball.radius, p3d(0.0, 0.0, 1.0)));
+            continue;
+        }
+
+        addSphere(sphere(ballpos, ball.radius, p3d(0.0, 1.0, 0.0)));
+        sprintTo(ballpos, false);
+        break;
     }
 }
 
@@ -723,12 +784,11 @@ void MyStrategy::C_attack()
 
     if (me->z + me->radius > game->ball.z)
     {
-        getBehindObject(p3d(game->ball.x, game->ball.y, game->ball.z), game->ball.radius);
-        //m_text = "getting behind";
+        // get behind ball
+        getBehindBall(game->ball);
     }
     else
     {
-        //if (isCentering(rules, game))
         futurePoint shootAt;
         int shootingPace, elevationTime;
         if (pickShootingPoint(200, shootAt, shootingPace, elevationTime))

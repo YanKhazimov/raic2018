@@ -91,12 +91,15 @@ private:
     void C_bullyAttacker();
 
     void getBehindObject(p3d pos, double r);
+    void getBehindBall(Ball ball);
+    double maxElevation();
+    int timeToRunTo(p3d pos);
 
     bool pickShootingPoint(int ticks, futurePoint& bestTarget, int &shootingPace, int &elevationTime);
     void intercept(const std::vector<futurePoint>& interceptionPoints, bool homeOnly);
 
     double brakeDistance(double initialSpeed);
-    futurePoint hitPoint(const MyStrategy::futurePoint& center);
+    futurePoint hitPoint(const MyStrategy::futurePoint& center, double xshift);
     void setSpeed(double value, p3d normal);
     void runTo(p3d to);
     void sprintTo(p3d to, bool jump);
