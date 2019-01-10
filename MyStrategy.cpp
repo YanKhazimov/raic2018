@@ -793,7 +793,8 @@ void MyStrategy::C_defend()
             if (/*r.id == me->id && */r.player_id == me->player_id)
                 continue;
 
-            if (myDistance > distanceXZ(ballPos, p3d(r.x, r.y, r.z)))
+            double rDist = distanceXZ(ballPos, p3d(r.x, r.y, r.z));
+            if (myDistance > rDist)
                 return;
         }
 
