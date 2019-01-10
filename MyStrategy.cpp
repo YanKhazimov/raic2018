@@ -49,7 +49,7 @@ double length(p3d a)
 p3d normalize(p3d v)
 {
     double l = length(v);
-    return eq(l, 0.0) ? p3d() : p3d(v.x/l, v.y/l, v.z/l);
+    return p3d(v.x/l, v.y/l, v.z/l);
 }
 
 double dot(const p3d& a, const p3d& b)
@@ -59,9 +59,11 @@ double dot(const p3d& a, const p3d& b)
     return std::inner_product(av.begin(), av.end(), bv.begin(), 0.0);
 }
 
-MyStrategy::futurePoint MyStrategy::hitPoint(const MyStrategy::futurePoint& center, double xshift)
+MyStrategy::futurePoint MyStrategy::hitPoint(const MyStrategy::futurePoint& center)
 {
-    p3d hit(center.pos.x + xshift,
+    //double xzRatio = fabs(center.v.z) / std::max(0.0001, fabs(center.v.x));
+
+    p3d hit(center.pos.x - sign(center.v.x) * rules->BALL_RADIUS/2, // clear along Vx
             center.pos.y - rules->BALL_RADIUS/2,
             center.pos.z - rules->BALL_RADIUS/2);
     return futurePoint(hit, center.v, center.t);
@@ -158,20 +160,20 @@ void MyStrategy::C_bullyAttacker()
 
 void MyStrategy::getRole()
 {
-    if (me->id == m_clearerId)
-    {
-        m_role = Role::Goalie;
-        return;
-    }
+//    if (me->id == m_clearerId)
+//    {
+//        m_role = Role::Goalie;
+//        return;
+//    }
 
-    auto teammate = getTeammate();
-    if (teammate.first == m_clearerId)
-    {
-        m_role = Role::Attacker;
-        return;
-    }
+    int teammateIdx = getTeammateIdx();
+//    if (teammateIdx == m_clearerId)
+//    {
+//        m_role = Role::Attacker;
+//        return;
+//    }
 
-    const Robot* mate = &game->robots[teammate.second];
+    const Robot* mate = &game->robots[teammateIdx];
 
     if (mate->z < me->z ||
             (eq(mate->z, me->z) && mate->velocity_z < me->velocity_z) ||
@@ -185,14 +187,14 @@ void MyStrategy::getRole()
     }
 }
 
-std::pair<int, int> MyStrategy::getTeammate()
+int MyStrategy::getTeammateIdx()
 {
     for (int i = 0; i < game->robots.size(); ++i)
     {
         if (game->robots[i].player_id != me->player_id || game->robots[i].id == me->id)
             continue;
 
-        return { game->robots[i].id, i };
+        return i;
     }
 }
 
@@ -205,7 +207,7 @@ void MyStrategy::getBehindObject(p3d pos, double r)
     else
         destination.x += r + me->radius;
 
-    //addSphere(sphere(destination, me->radius, p3d(0.0, 1.0, 0.0)));
+    addSphere(sphere(destination, me->radius, p3d(0.0, 1.0, 0.0)));
 
     sprintTo(destination, false);
 }
@@ -471,36 +473,23 @@ void MyStrategy::simulateBounce(p3d& ballPos, p3d& ballv)
     }
 }
 
-double MyStrategy::maxElevation()
-{
-    double myY = me->radius;
-    double myVY = rules->ROBOT_MAX_JUMP_SPEED;
-    while (myVY > 0.0)
-    {
-        myVY -= rules->GRAVITY / TICKS;
-        myY += myVY / TICKS;
-    }
-
-    return myY;
-}
-
 int MyStrategy::timeToElevate(double height)
 {
     int ticksToGoUp = 0;
     double myY = me->y;
-    double myVY = me->velocity_y;
-    while (myY < height)
+    if (!me->touch)
     {
-        myVY = std::min(myVY + rules->ROBOT_ACCELERATION / TICKS, rules->ROBOT_MAX_JUMP_SPEED) - rules->GRAVITY / TICKS;
+        return -1;
+    }
+    double myVY = rules->ROBOT_MAX_JUMP_SPEED;
+    while(myY < height && myVY > 0.0)
+    {
+        myVY -= rules->GRAVITY / TICKS;
         myY += myVY / TICKS;
-        if (myVY < 0.0)
-        {
-            return -1;
-        }
         ++ticksToGoUp;
     }
 
-    return ticksToGoUp;
+    return myY < height ? -1 : ticksToGoUp;
 }
 
 bool MyStrategy::inGoalSector(p3d ballPos, int& xshift)
@@ -529,21 +518,6 @@ void MyStrategy::addSphere(sphere s)
 #endif
 }
 
-void MyStrategy::simulateTick(p3d& ballpos, p3d& ballv)
-{
-    std::pair<p3d, double> dan = dan_to_arena(ballpos, rules->arena);
-    bool rolling = dan.second < game->ball.radius + 0.01 && dot(ballv, dan.first) < 0.0;
-    if (rolling)
-    {
-        simulateRoll(ballpos, ballv, dan.first);
-    }
-    else
-    {
-        // bouncing
-        simulateBounce(ballpos, ballv);
-    }
-}
-
 bool MyStrategy::pickShootingPoint(int ticks, futurePoint& bestTarget, int& bestPace, int& bestElevationTime)
 {
     p3d ballpos(game->ball.x,game->ball.y, game->ball.z);
@@ -553,7 +527,17 @@ bool MyStrategy::pickShootingPoint(int ticks, futurePoint& bestTarget, int& best
     bestElevationTime = -100;
     for (int t = 0; t < ticks; ++t)
     {
-        simulateTick(ballpos, ballv);
+        std::pair<p3d, double> dan = dan_to_arena(ballpos, rules->arena);
+        bool rolling = dan.second < game->ball.radius + 0.01 && dot(ballv, dan.first) < 0.0;
+        if (rolling)
+        {
+            simulateRoll(ballpos, ballv, dan.first);
+        }
+        else
+        {
+            // bouncing
+            simulateBounce(ballpos, ballv);
+        }
 
         if (t % checkStep == 0)
         {
@@ -593,7 +577,7 @@ void MyStrategy::act(const Robot& _me, const Rules& _rules, const Game& _game, A
     {
         m_spheres.clear();
         m_tick_spheres = game->current_tick;
-        //m_text = "";
+        m_text = "";
     }
 
     getRole();
@@ -687,7 +671,7 @@ std::pair<int, int> MyStrategy::measureShot(futurePoint target)
 
     int t = interceptionTime(target, me);
     int pace = target.t - t;
-    //m_text = std::to_string(pace);
+    m_text = std::to_string(pace);
 
     return { pace, elevationTime };
 }
@@ -704,9 +688,7 @@ void MyStrategy::intercept(const std::vector<futurePoint>& interceptionPoints, b
     if (homeOnly && iPoint.pos.z > 0.0)
         return;
 
-    if (m_role == Role::Goalie)
-        m_clearerId = me->id;
-
+    //m_clearerId = me->id;
     if (isRolling(game->ball))
     {
         if (iPointIndex == 1)
@@ -716,79 +698,40 @@ void MyStrategy::intercept(const std::vector<futurePoint>& interceptionPoints, b
     else
     {
         // ball is bouncing
-        double xshift = -sign(iPoint.v.x) * rules->BALL_RADIUS/2; // clear along Vx
-        futurePoint pointToHit = hitPoint(iPoint, xshift);
+        futurePoint pointToHit = hitPoint(iPoint);
         interceptBounceAt(pointToHit);
-    }
-}
-
-int MyStrategy::timeToRunTo(p3d pos)
-{
-    double distXZ = distanceXZ(pos, p3d(me->x, 0.0, me->z));
-
-    return 1 + static_cast<int>(1.25 * distXZ / (rules->ROBOT_MAX_GROUND_SPEED/TICKS));
-}
-
-void MyStrategy::getBehindBall(Ball ball)
-{
-    p3d ballpos(ball.x, ball.y, ball.z);
-    p3d ballv(ball.velocity_x, ball.velocity_y, ball.velocity_z);
-
-    double maxJumpHeight = maxElevation();
-
-    for (int t = 1; t < 200; ++t)
-    {
-        simulateTick(ballpos, ballv);
-
-        if (ballv.y >= rules->ROBOT_MAX_GROUND_SPEED)
-        {
-            // can't keep up speed
-            addSphere(sphere(ballpos, ball.radius, p3d(1.0, 0.0, 0.0)));
-            continue;
-        }
-
-        futurePoint hitPos = hitPoint(futurePoint(ballpos, ballv, t), 0.0);
-        if (hitPos.pos.y >= maxJumpHeight + me->radius/2)
-        {
-            // too high
-            addSphere(sphere(ballpos, ball.radius, p3d(1.0, 0.0, 0.0)));
-            continue;
-        }
-
-        int tElevate = timeToElevate(hitPos.pos.y - me->radius/2);
-        int tRun = timeToRunTo(p3d(hitPos.pos.x, 0.0, hitPos.pos.z));
-
-        if (tRun + tElevate > t)
-        {
-            // too far
-            addSphere(sphere(ballpos, ball.radius, p3d(0.0, 0.0, 1.0)));
-            continue;
-        }
-
-        addSphere(sphere(ballpos, ball.radius, p3d(0.0, 1.0, 0.0)));
-        sprintTo(ballpos, false);
-        break;
     }
 }
 
 void MyStrategy::C_attack()
 {
-    auto teammate = getTeammate();
-    if (m_clearerId == teammate.first)
+    //if (m_clearerId == getTeammateIdx())
     {
-        action->target_velocity_x = game->robots[teammate.second].velocity_x;
-        action->target_velocity_y = game->robots[teammate.second].velocity_y;
-        action->target_velocity_z = game->robots[teammate.second].velocity_z;
-        return;
+//        int teammateIdx = getTeammateIdx();
+//        const Robot* teammate = &game->robots[teammateIdx];
+//        if (me->z > teammate->z)
+//        {
+//            getBehindObject(p3d(teammate->x, teammate->y, teammate->z), teammate->radius);
+//        }
+//        else
+//        {
+//            p3d pos = getGoalieDefaultPosition(game->ball);
+//            runTo(pos);
+//        }
+        //m_text = "bullying attacker";
+        //C_bullyAttacker();
+
+        //return;
     }
 
     if (me->z + me->radius > game->ball.z)
     {
-        // get behind ball
-        getBehindBall(game->ball);
+        getBehindObject(p3d(game->ball.x, game->ball.y, game->ball.z), game->ball.radius);
+        //m_text = "getting behind";
     }
     else
     {
+        //if (isCentering(rules, game))
         futurePoint shootAt;
         int shootingPace, elevationTime;
         if (pickShootingPoint(200, shootAt, shootingPace, elevationTime))
@@ -824,8 +767,8 @@ void MyStrategy::C_attack()
 
 void MyStrategy::C_defend()
 {
-    if (m_clearerId == me->id)
-        m_clearerId = -1;
+//    if (m_clearerId == me->id)
+//        m_clearerId = -1;
 
     p3d pos = getGoalieDefaultPosition(game->ball);
     runTo(pos);
@@ -850,87 +793,114 @@ void MyStrategy::C_defend()
 
         for (const Robot& r: game->robots)
         {
-            if (/*r.id == me->id && */r.player_id == me->player_id)
+            if (r.id == me->id && r.player_id == me->player_id)
                 continue;
 
-            double rDist = distanceXZ(ballPos, p3d(r.x, r.y, r.z));
-            if (myDistance > rDist)
+            if (myDistance >= distanceXZ(ballPos, p3d(r.x, r.y, r.z)))
                 return;
         }
 
-        m_clearerId = me->id;
+        //m_clearerId = me->id;
         sprintTo(ballPos, true);
     }
-    m_text = std::to_string(m_clearerId);
 }
 
-void MyStrategy::getInterceptionPoints(Ball ball, double secondsForward, std::vector<futurePoint>& points)
+void MyStrategy::getInterceptionPoints(const Ball &ball, double secondsForward, std::vector<futurePoint>& points)
 {
     double GRAVITY = rules->GRAVITY;
 
-    p3d ballpos(ball.x, ball.y, ball.z);
-    p3d ballv(ball.velocity_x, ball.velocity_y, ball.velocity_z);
+    p3d ballPos(ball.x, ball.y, ball.z);
+
+    double ballVy = ball.velocity_y;
+
+    bool rolling = isRolling(ball);
 
     int ticks = static_cast<int>(secondsForward * TICKS);
 
     bool newInterval = true; // участок монотонности
-    for (int t = 1; t < ticks; ++t)
+    for (int t = 0; t < ticks; ++t)
     {
-        if (ballv.y * (ballv.y - GRAVITY / TICKS) < 0.0)
+        ballPos.x += ball.velocity_x / TICKS;
+        ballPos.y += ballVy / TICKS - GRAVITY / TICKS / TICKS / 2;
+        ballPos.z += ball.velocity_z / TICKS;
+
+        if (ballVy * (ballVy - GRAVITY / TICKS) < 0.0)
         {
             // going down
             newInterval = true;
         }
 
+        ballVy -= GRAVITY / TICKS;
+
         if (newInterval &&
-                ((ballv.y < 0.0 && ballpos.y < 2 * ball.radius) || (ballv.y > 0.0 && ballpos.y < 2 * ball.radius)))
+                ((ballVy < 0.0 && ballPos.y < 2 * ball.radius) || (ballVy > 0.0 && ballPos.y < 2 * ball.radius)))
         {
-            points.push_back(futurePoint(ballpos, ballv, t));
+            if (!rolling)
+                points.push_back(futurePoint(p3d(ballPos.x, ballPos.y, ballPos.z),
+                                             p3d(ball.velocity_x, ballVy, ball.velocity_z),
+                                             t));
             newInterval = false;
         }
 
-        if (ballpos.y + ballv.y / TICKS - GRAVITY / TICKS / TICKS / 2 < ball.radius)
+        if (ballPos.y < ball.radius)
         {
             // going up
+            ballVy = -ballVy * rules->BALL_ARENA_E;
+            ballPos.y += (ball.radius - ballPos.y);
             newInterval = true;
         }
-
-        simulateTick(ballpos, ballv);
     }
 
-    for (int i = 0; i < points.size(); ++i)
+    if (rolling)
     {
-        addSphere(sphere(points[i].pos, ball.radius, p3d(0.0, 0.0, 1.0)));
+        int count = 10;
+        points.push_back(futurePoint(p3d(ball.x, ball.y, ball.z),
+                                     p3d(ball.velocity_x, ballVy, ball.velocity_z),
+                                     0));
+        for (int i = count - 1; i > 0; --i)
+        {
+            points.push_back(futurePoint(p3d(ballPos.x + (ball.x - ballPos.x) / count * i,
+                                             ballPos.y + (ball.y - ballPos.y) / count * i,
+                                             ballPos.z + (ball.z - ballPos.z) / count * i),
+                                         p3d(ball.velocity_x, ballVy, ball.velocity_z),
+                                         static_cast<int>(secondsForward * TICKS / count * (count - i))));
+        }
     }
 
-    points.push_back(futurePoint(ballpos, ballv, ticks));
-    addSphere(sphere(points.back().pos, ball.radius, p3d(1.0, 0.0, 1.0)));
+    points.push_back(futurePoint(p3d(ballPos.x, ballPos.y, ballPos.z),
+                                 p3d(ball.velocity_x, ballVy, ball.velocity_z),
+                                 ticks));
+
+//    for (auto ip: points)
+//    {
+//        addSphere(sphere(ip.pos, ball.radius, p3d(0.0, 0.0, 1.0)));
+//    }
 }
 
 bool MyStrategy::ballGoesToGoal(const Ball &ball, std::vector<futurePoint>& interceptionPoints)
 {
     interceptionPoints.clear();
-    bool result = false;
-
-    double secondsToGoalLine = (ball.z + rules->arena.depth/2) / -ball.velocity_z;
-    if (secondsToGoalLine > 10.0)
-        return result;
 
     if (ball.velocity_z >= 0.0) // от ворот
-        return result;
+        return false;
 
-//    if (ball.velocity_x < 0 && ball.x < -rules->arena.goal_width/2) // прокатился налево
-//        return result;
+    if (ball.velocity_x < 0 && ball.x < -rules->arena.goal_width/2) // прокатился налево
+        return false;
 
-//    if (ball.velocity_x > 0 && ball.x > rules->arena.goal_width/2) // прокатился направо
-//        return result;
+    if (ball.velocity_x > 0 && ball.x > rules->arena.goal_width/2) // прокатился направо
+        return false;
 
-//    if (fabs(ball.x) >= rules->arena.width/2 - rules->arena.bottom_radius) // над радиусом - посчитаем позже
-//        return result;
+    if (fabs(ball.x) >= rules->arena.width/2 - rules->arena.bottom_radius) // над радиусом - посчитаем позже
+        return false;
+
+    double secondsToGoalLine = (ball.z + rules->arena.depth/2) / -ball.velocity_z;
+
+    if (secondsToGoalLine > 30.0)
+        return false;
 
     getInterceptionPoints(ball, secondsToGoalLine, interceptionPoints);
 
-    result = fabs(interceptionPoints.back().pos.x) <= rules->arena.goal_width/2 - ball.radius/2 &&
+    bool result = fabs(interceptionPoints.back().pos.x) <= rules->arena.goal_width/2 - ball.radius/2 &&
             fabs(interceptionPoints.back().pos.y) <= rules->arena.goal_height - ball.radius;
 
     return result;

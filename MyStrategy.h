@@ -1,7 +1,3 @@
-#if defined(_MSC_VER) && (_MSC_VER >= 1200)
-#pragma once
-#endif
-
 #ifndef _MY_STRATEGY_H_
 #define _MY_STRATEGY_H_
 
@@ -60,7 +56,7 @@ private:
     int m_tick_spheres = -1;
     std::string m_text;
     const int criticalPaceDiff = 6;
-    int m_clearerId = -1;
+    //int m_clearerId = -1;
 
     enum Role {
         Unassigned = 0,
@@ -71,12 +67,12 @@ private:
     Role m_role;
 
     void getRole();
-    std::pair<int, int> getTeammate(); // id, idx
+    int getTeammateIdx();
 
     // COMMANDS
     void C_defend();
     void C_attack();
-    void getInterceptionPoints(model::Ball ball,
+    void getInterceptionPoints(const model::Ball &ball,
                                double secondsForward, std::vector<futurePoint>& points);
     bool ballGoesToGoal(const model::Ball &ball,
                         std::vector<futurePoint > &interceptionPoints);
@@ -91,21 +87,17 @@ private:
     void C_bullyAttacker();
 
     void getBehindObject(p3d pos, double r);
-    void getBehindBall(Ball ball);
-    double maxElevation();
-    int timeToRunTo(p3d pos);
 
     bool pickShootingPoint(int ticks, futurePoint& bestTarget, int &shootingPace, int &elevationTime);
     void intercept(const std::vector<futurePoint>& interceptionPoints, bool homeOnly);
 
     double brakeDistance(double initialSpeed);
-    futurePoint hitPoint(const MyStrategy::futurePoint& center, double xshift);
+    futurePoint hitPoint(const MyStrategy::futurePoint& center);
     void setSpeed(double value, p3d normal);
     void runTo(p3d to);
     void sprintTo(p3d to, bool jump);
     void simulateRoll(p3d& ballpos, p3d& ballv, const p3d& normal);
     void simulateBounce(p3d& ballPos, p3d& ballv);
-    void simulateTick(p3d& ballpos, p3d& ballv);
     int timeToElevate(double height);
     bool inGoalSector(p3d ballPos, int &xshift);
 
