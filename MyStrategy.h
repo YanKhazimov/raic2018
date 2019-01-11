@@ -3,7 +3,7 @@
 
 #include "Strategy.h"
 
-//#define debugging_spheres_yan true
+#define debugging_spheres_yan true
 
 struct p3d {
     double x;
@@ -34,6 +34,9 @@ class MyStrategy : public Strategy {
 public:
     MyStrategy();
 
+    void shootPrecisely();
+    bool narazgone = false;
+
     void act(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action) override;
 
     std::string custom_rendering() override;
@@ -47,6 +50,7 @@ public:
         futurePoint();
         futurePoint(p3d _pos, p3d _v, int _t);
     };
+    futurePoint getMoveTarget();
 
 private:
     const Robot* me; const Rules* rules; const Game* game; Action* action;
@@ -98,6 +102,7 @@ private:
     void sprintTo(p3d to, bool jump);
     void simulateRoll(p3d& ballpos, p3d& ballv, const p3d& normal);
     void simulateBounce(p3d& ballPos, p3d& ballv);
+    void simulateTick(p3d& ballpos, p3d& ballv);
     int timeToElevate(double height);
     bool inGoalSector(p3d ballPos, int &xshift);
 
