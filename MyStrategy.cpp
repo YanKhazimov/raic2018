@@ -49,7 +49,7 @@ double length(p3d a)
 p3d normalize(p3d v)
 {
     double l = length(v);
-    return p3d(v.x/l, v.y/l, v.z/l);
+    return l == 0.0 ? p3d() : p3d(v.x/l, v.y/l, v.z/l);
 }
 
 double dot(const p3d& a, const p3d& b)
@@ -476,7 +476,7 @@ void MyStrategy::simulateBounce(p3d& ballPos, p3d& ballv)
 int MyStrategy::timeToElevate(double height)
 {
     int ticksToGoUp = 0;
-    double myY = me->y;
+    double myY = me->y + me->radius/2;
     if (!me->touch)
     {
         return -1;
@@ -580,6 +580,8 @@ void MyStrategy::act(const Robot& _me, const Rules& _rules, const Game& _game, A
         m_text = "";
     }
 
+    m_text = std::to_string(game->current_tick);
+
     getRole();
 
     if (m_role == Role::Attacker)
@@ -651,13 +653,19 @@ bool MyStrategy::interceptBounceAt(const futurePoint& point)
     if (canReachInTime(point, sprintTime, elevationTime))
     {
         double desiredSpeed = rules->ROBOT_MAX_GROUND_SPEED * sprintTime / point.t;
-
         setSpeed(desiredSpeed, p3d(point.pos.x - me->x, 0.0, point.pos.z - me->z));
 
         if (elevationTime >= point.t)
             action->jump_speed = rules->ROBOT_MAX_JUMP_SPEED;
 
         return true;
+    }
+    else if (sprintTime != 0 && elevationTime != -1)
+    {
+        double desiredSpeed = rules->ROBOT_MAX_GROUND_SPEED * sprintTime / point.t;
+        setSpeed(desiredSpeed, p3d(point.pos.x - me->x, 0.0, point.pos.z - me->z));
+
+        action->jump_speed = rules->ROBOT_MAX_JUMP_SPEED;
     }
 
     return false;
@@ -700,6 +708,7 @@ void MyStrategy::intercept(const std::vector<futurePoint>& interceptionPoints, b
         // ball is bouncing
         futurePoint pointToHit = hitPoint(iPoint);
         interceptBounceAt(pointToHit);
+        addSphere(sphere(iPoint.pos, rules->BALL_RADIUS, p3d(1.0, 0.0, 1.0)));
     }
 }
 
@@ -736,10 +745,10 @@ void MyStrategy::C_attack()
         int shootingPace, elevationTime;
         if (pickShootingPoint(200, shootAt, shootingPace, elevationTime))
         {
-            addSphere(sphere(shootAt.pos, rules->BALL_RADIUS*1.1, p3d(0.0, 1.0, 0.0)));
+            //addSphere(sphere(shootAt.pos, rules->BALL_RADIUS*1.1, p3d(0.0, 1.0, 0.0)));
             if (abs(shootingPace) < criticalPaceDiff)
             {
-                addSphere(sphere(shootAt.pos, rules->BALL_RADIUS, p3d(0.0, 1.0, 0.0)));
+                //addSphere(sphere(shootAt.pos, rules->BALL_RADIUS, p3d(0.0, 1.0, 0.0)));
 
                 if (shootingPace <= 0)
                     setSpeed(rules->ROBOT_MAX_GROUND_SPEED, p3d(shootAt.pos.x - me->x, 0.0, shootAt.pos.z - me->z));
@@ -871,10 +880,10 @@ void MyStrategy::getInterceptionPoints(const Ball &ball, double secondsForward, 
                                  p3d(ball.velocity_x, ballVy, ball.velocity_z),
                                  ticks));
 
-//    for (auto ip: points)
-//    {
-//        addSphere(sphere(ip.pos, ball.radius, p3d(0.0, 0.0, 1.0)));
-//    }
+    for (auto ip: points)
+    {
+        addSphere(sphere(ip.pos, ball.radius, p3d(0.0, 0.0, 1.0)));
+    }
 }
 
 bool MyStrategy::ballGoesToGoal(const Ball &ball, std::vector<futurePoint>& interceptionPoints)
@@ -927,13 +936,18 @@ int MyStrategy::interceptionTime(futurePoint at, const Robot* robot)
 
 bool MyStrategy::canReachInTime(futurePoint at, int& sprintTime, int& elevationTime)
 {
+    if (at.t == 0)
+        return false;
+
     sprintTime = interceptionTime(at, me);
     if (sprintTime > at.t)
         return false; // too far
 
     elevationTime = timeToElevate(at.pos.y);
     if (elevationTime == -1)
+    {
         return false; // too high
+    }
 
     if (elevationTime > at.t)
         return false; // jumping too slow
