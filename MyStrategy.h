@@ -3,7 +3,7 @@
 
 #include "Strategy.h"
 
-#define debugging_spheres_yan true
+//#define debugging_spheres_yan true
 
 struct p3d {
     double x;
@@ -15,6 +15,8 @@ struct p3d {
     p3d operator- (const p3d& other) const;
     p3d operator+ (const p3d& other) const;
     p3d operator* (const double& mult) const;
+    bool operator==(const p3d& other);
+    bool operator!=(const p3d& other);
 };
 
 struct sphere {
@@ -34,13 +36,6 @@ class MyStrategy : public Strategy {
 public:
     MyStrategy();
 
-    void shootPrecisely();
-    bool narazgone = false;
-
-    void act(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action) override;
-
-    std::string custom_rendering() override;
-
     struct futurePoint
     {
         p3d pos;
@@ -49,8 +44,22 @@ public:
 
         futurePoint();
         futurePoint(p3d _pos, p3d _v, int _t);
+        bool operator==(const futurePoint& other);
+        bool operator!=(const futurePoint& other);
     };
+
+    void alignShot();
+    bool hasRunUp = false;
+    p3d getRunupPosition(const MyStrategy::futurePoint& shotPos, p3d shotTarget);
     futurePoint getMoveTarget();
+    p3d getShotTarget();
+    int timeToRun(p3d to, p3d pos, p3d v);
+    int timeToChangeSpeed(p3d targetSpeed, p3d initialSpeed, double &dist);
+
+    void act(const model::Robot& me, const model::Rules& rules, const model::Game& game, model::Action& action) override;
+
+    std::string custom_rendering() override;
+
 
 private:
     const Robot* me; const Rules* rules; const Game* game; Action* action;
@@ -72,6 +81,8 @@ private:
 
     void getRole();
     int getTeammateIdx();
+    double maxElevation();
+    bool isRolling(const p3d& ballPos);
 
     // COMMANDS
     void C_defend();
@@ -82,7 +93,7 @@ private:
                         std::vector<futurePoint > &interceptionPoints);
     std::pair<int, int> pickInterceptionPoint(const std::vector<futurePoint>& interceptionPoints);
     int interceptionTime(futurePoint at, const Robot *robot);
-    bool canReachInTime(futurePoint at, int &sprintTime, int &elevationTime);
+    int canReachInTime(futurePoint at, int &sprintTime, int &elevationTime);
     bool interceptBounceAt(const futurePoint& point);
     std::pair<int, int> measureShot(futurePoint point);
     p3d getGoalieDefaultPosition(const model::Ball &ball);
