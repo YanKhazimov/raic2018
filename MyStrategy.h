@@ -69,7 +69,7 @@ private:
     int m_tick_spheres = -1;
     std::string m_text;
     const int criticalPaceDiff = 6;
-    //int m_clearerId = -1;
+    int m_clearerId = -1;
 
     enum Role {
         Unassigned = 0,
@@ -80,7 +80,7 @@ private:
     Role m_role;
 
     void getRole();
-    int getTeammateIdx();
+    std::pair<int, int> getTeammate();
     double maxElevation();
     bool isRolling(const p3d& ballPos);
 
@@ -108,6 +108,7 @@ private:
 
     double brakeDistance(double initialSpeed);
     futurePoint hitPoint(const MyStrategy::futurePoint& center);
+    p3d alignHitTo(p3d target, p3d ball);
     void setSpeed(double value, p3d normal);
     void runTo(p3d to);
     void sprintTo(p3d to, bool jump);
