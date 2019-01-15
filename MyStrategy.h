@@ -93,6 +93,7 @@ private:
                         std::vector<futurePoint > &interceptionPoints);
     std::pair<int, int> pickInterceptionPoint(const std::vector<futurePoint>& interceptionPoints);
     int interceptionTime(futurePoint at, const Robot *robot);
+    int sprintTime(p3d at, const Robot *robot, int elevationTime);
     int canReachInTime(futurePoint at, int &sprintTime, int &elevationTime);
     bool interceptBounceAt(const futurePoint& point);
     std::pair<int, int> measureShot(futurePoint point);
