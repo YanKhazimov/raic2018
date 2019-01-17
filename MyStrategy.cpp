@@ -560,7 +560,6 @@ bool MyStrategy::pickShootingPoint(int ticks, futurePoint& bestTarget, p3d& best
 
         //if (inGoalSector(ballpos))
         {
-
             futurePoint target(moveTarget, ballv, t + 1);
 
             int pace, elevationTime;
@@ -575,7 +574,7 @@ bool MyStrategy::pickShootingPoint(int ticks, futurePoint& bestTarget, p3d& best
                 bestBall = ballpos;
             }
 
-            if (pace == 0)
+            if (abs(bestPace) < 2)
                 break;
         }
     }
@@ -943,7 +942,7 @@ void MyStrategy::C_attack()
 //        return;
 //    }
 
-    if (me->z + me->radius > game->ball.z)
+    if (me->z + me->radius > game->ball.z && game->ball.velocity_z < 0)
     {
         getBehindNextLanding();
     }
@@ -967,7 +966,7 @@ void MyStrategy::C_attack()
             // we have a planned target
             p3d ballpos(game->ball.x, game->ball.y, game->ball.z);
             p3d ballv(game->ball.velocity_x, game->ball.velocity_y, game->ball.velocity_z);
-            for (int t = game->current_tick + 1; t <= m_plannedTarget.tick; ++t)
+            for (int t = game->current_tick + 1; t < m_plannedTarget.tick; ++t)
             {
                 simulateTick(ballpos, ballv);
             }
@@ -976,11 +975,11 @@ void MyStrategy::C_attack()
             double error = length(ballpos - m_plannedTarget.ball);
             m_text = std::to_string(error);
 
-            if (ballpos == m_plannedTarget.ball)
+            if (error < 0.01)
             {
                 m_text = "shooting";
                 setSpeed(rules->ROBOT_MAX_GROUND_SPEED, p3d(m_plannedTarget.me.x - me->x, 0.0, m_plannedTarget.me.z - me->z));
-                if (m_plannedTarget.elevationTime >= m_plannedTarget.tick - game->current_tick)
+                if (me->velocity_z > 0 && m_plannedTarget.elevationTime >= m_plannedTarget.tick - game->current_tick)
                 {
                     action->jump_speed = rules->ROBOT_MAX_JUMP_SPEED;
                 }

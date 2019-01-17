@@ -68,7 +68,7 @@ private:
     std::vector<sphere> m_spheres;
     int m_tick_spheres = -1;
     std::string m_text;
-    const int criticalPaceDiff = 3;
+    const int criticalPaceDiff = 2;
     int m_clearerId = -1;
 
     struct PlannedShot {
