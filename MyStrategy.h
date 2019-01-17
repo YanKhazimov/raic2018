@@ -3,7 +3,7 @@
 
 #include "Strategy.h"
 
-//#define debugging_spheres_yan true
+#define debugging_spheres_yan true
 
 struct p3d {
     double x;
@@ -68,8 +68,21 @@ private:
     std::vector<sphere> m_spheres;
     int m_tick_spheres = -1;
     std::string m_text;
-    const int criticalPaceDiff = 6;
+    const int criticalPaceDiff = 3;
     int m_clearerId = -1;
+
+    struct PlannedShot {
+        p3d ball;
+        p3d me;
+        int tick;
+        int elevationTime;
+        PlannedShot();
+        PlannedShot(p3d b, p3d m, int t, int et);
+        bool isValid();
+        void invalidate();
+    };
+
+    PlannedShot m_plannedTarget;
 
     enum Role {
         Unassigned = 0,
@@ -102,14 +115,15 @@ private:
     void C_bullyGoalie();
     void C_bullyAttacker();
 
-    void getBehindObject(p3d pos, double r);
+    void getBehindNextLanding();
 
-    bool pickShootingPoint(int ticks, futurePoint& bestTarget, int &shootingPace, int &elevationTime);
+    bool pickShootingPoint(int ticks, futurePoint& bestTarget, p3d &bestBall, int &shootingPace, int &elevationTime);
+    p3d getBestGoalTarget(p3d ballpos);
     void intercept(const std::vector<futurePoint>& interceptionPoints, bool homeOnly);
 
     double brakeDistance(double initialSpeed);
     futurePoint hitPoint(const MyStrategy::futurePoint& center);
-    p3d alignHitTo(p3d target, p3d ball);
+    p3d alignHitTo(p3d target, p3d ball, bool under45 = true);
     void setSpeed(double value, p3d normal);
     void runTo(p3d to);
     void sprintTo(p3d to, bool jump);
@@ -117,7 +131,7 @@ private:
     void simulateBounce(p3d& ballPos, p3d& ballv);
     void simulateTick(p3d& ballpos, p3d& ballv);
     int timeToElevate(double height);
-    bool inGoalSector(p3d ballPos, int &xshift);
+    bool inGoalSector(p3d ballPos);
 
     void addSphere(sphere s);
     std::string logSphere(double x, double y, double z, double r, p3d rgb);
