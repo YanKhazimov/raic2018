@@ -118,7 +118,7 @@ private:
 
     void getBehindNextLanding();
 
-    bool pickShootingPoint(int ticks, futurePoint& bestTarget, p3d &bestBall, int &shootingPace, int &elevationTime);
+    bool pickShootingPoint(int ticks, futurePoint& bestTarget, futurePoint &bestBall, int &shootingPace, int &elevationTime);
     p3d getBestGoalTarget(p3d ballpos);
     void intercept(const std::vector<futurePoint>& interceptionPoints, bool homeOnly);
 
