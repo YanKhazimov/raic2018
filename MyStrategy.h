@@ -17,6 +17,7 @@ struct p3d {
     p3d operator* (const double& mult) const;
     bool operator==(const p3d& other);
     bool operator!=(const p3d& other);
+    p3d to2d();
 };
 
 struct sphere {

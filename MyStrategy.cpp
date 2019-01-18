@@ -536,7 +536,7 @@ p3d MyStrategy::getBestGoalTarget(p3d ballpos)
     //int cornerSign = (me->x < ballpos.x) ? 1 : -1;
     return p3d(0,//rules->arena.goal_width/2 * cornerSign,
                rules->arena.goal_height - game->ball.radius,
-               rules->arena.depth/2);
+               rules->arena.depth/2 + rules->arena.goal_depth);
 }
 
 bool MyStrategy::pickShootingPoint(int ticks, futurePoint& bestTarget, p3d& bestBall, int& bestPace, int& bestElevationTime)
@@ -548,35 +548,43 @@ bool MyStrategy::pickShootingPoint(int ticks, futurePoint& bestTarget, p3d& best
     for (int t = 1; t < ticks; ++t)
     {
         simulateTick(ballpos, ballv);
-        if (fabs(ballpos.x) >= rules->arena.width/2 - rules->arena.bottom_radius)
-            continue;
 
         if (t % 10 == 0)
             addSphere(sphere(ballpos, rules->BALL_RADIUS, p3d(1.0, 1.0, 0.0)));
+
+        if (fabs(ballpos.x) >= rules->arena.width/2 - rules->arena.bottom_radius)
+            continue;
 
         p3d goalTarget = getBestGoalTarget(ballpos);
         p3d moveTarget = alignHitTo(goalTarget, ballpos,
                                     distanceXZ(ballpos, goalTarget) > rules->arena.depth/2);
 
-        //if (inGoalSector(ballpos))
+        if (moveTarget.z > rules->arena.depth/2 &&
+                fabs(moveTarget.x) > rules->arena.width/2 - rules->arena.bottom_radius)
+            continue;
+
+        p3d v1 = (goalTarget - ballpos).to2d();
+        p3d v2 = (moveTarget - p3d(me->x, 0.0, me->z)).to2d();
+        double angle = acos(dot(v1, v2) / length(v1) / length(v2));
+        if (ballpos.z > rules->arena.depth/2 && angle > M_PI_4)
+            continue;
+
+        futurePoint target(moveTarget, ballv, t + 1);
+
+        int pace, elevationTime;
+        std::tie(pace, elevationTime) = measureShot(target);
+
+        if (elevationTime != -1 &&
+                (abs(pace) < abs(bestPace) || (abs(pace) == abs(bestPace) && pace > bestPace)))
         {
-            futurePoint target(moveTarget, ballv, t + 1);
-
-            int pace, elevationTime;
-            std::tie(pace, elevationTime) = measureShot(target);
-
-            if (elevationTime != -1 &&
-                    (abs(pace) < abs(bestPace) || (abs(pace) == abs(bestPace) && pace > bestPace)))
-            {
-                bestPace = pace;
-                bestElevationTime = elevationTime;
-                bestTarget = target;
-                bestBall = ballpos;
-            }
-
-            if (abs(bestPace) < 2)
-                break;
+            bestPace = pace;
+            bestElevationTime = elevationTime;
+            bestTarget = target;
+            bestBall = ballpos;
         }
+
+        if (abs(bestPace) < 2)
+            break;
     }
     return abs(bestPace) < criticalPaceDiff && bestElevationTime != -1;
 }
@@ -699,9 +707,8 @@ std::pair<int, int> MyStrategy::measureShot(futurePoint target)
     if (elevationTime == -1)
         return { -criticalPaceDiff, -1 };
 
-    int t = sprintTime(target.pos, me, elevationTime);//interceptionTime(target, me);
+    int t = interceptionTime(target, me);//sprintTime(target.pos, me, elevationTime);
     int pace = target.t - t;
-    //m_text = std::to_string(pace);
 
     return { pace, elevationTime };
 }
@@ -818,7 +825,7 @@ p3d MyStrategy::alignHitTo(p3d target, p3d ball, bool under45)
     p3d v = target - ball;
     if (under45)
         v.y = sqrt(v.x*v.x + v.z*v.z);
-    double r1r2 = rules->BALL_RADIUS + rules->ROBOT_RADIUS;
+    double r1r2 = rules->ROBOT_RADIUS + rules->ROBOT_RADIUS;//rules->BALL_RADIUS;
     p3d hitOffset = normalize(v) * r1r2;
     return ball - hitOffset;
 }
@@ -948,18 +955,6 @@ void MyStrategy::C_attack()
     }
     else
     {
-//        const Ball& b = game->ball;
-//        if (b.z < 0.0 && (fabs(b.x) < rules->arena.width/3 || b.velocity_x * b.x < 0) && b.y < rules->arena.height/2)
-//        {
-//            sprintTo(p3d(game->ball.x, 0.0, game->ball.z), false);
-//            if (distanceXZ(p3d(b.x, 0, b.z), p3d(me->x, 0, me->z)) < rules->BALL_RADIUS + rules->ROBOT_RADIUS
-//                    && b.y < 2 * rules->BALL_RADIUS && me->velocity_z > 0.0)
-//            {
-//                action->jump_speed = rules->ROBOT_MAX_JUMP_SPEED;
-//            }
-//            return;
-//        }
-
         m_text = "";
         if (m_plannedTarget.isValid())
         {
@@ -971,55 +966,53 @@ void MyStrategy::C_attack()
                 simulateTick(ballpos, ballv);
             }
             addSphere(sphere(m_plannedTarget.ball, rules->BALL_RADIUS, p3d(0.0, 0.0, 0.0)));
-            addSphere(sphere(ballpos, rules->BALL_RADIUS, p3d(1.0, 1.0, 1.0)));
+            addSphere(sphere(m_plannedTarget.me, rules->ROBOT_RADIUS, p3d(1.0, 0.0, 1.0)));
             double error = length(ballpos - m_plannedTarget.ball);
-            m_text = std::to_string(error);
 
             if (error < 0.01)
             {
-                m_text = "shooting";
+                futurePoint target(m_plannedTarget.me, p3d(), m_plannedTarget.tick - game->current_tick);
+                int pace, elevationTime;
+                std::tie(pace, elevationTime) = measureShot(target);
+                if (pace > 0)
+                {
+                    m_text = "waiting " + std::to_string(pace);
+                    return;
+                }
+
+                m_text = "shooting " + std::to_string(pace);
                 setSpeed(rules->ROBOT_MAX_GROUND_SPEED, p3d(m_plannedTarget.me.x - me->x, 0.0, m_plannedTarget.me.z - me->z));
-                if (me->velocity_z > 0 && m_plannedTarget.elevationTime >= m_plannedTarget.tick - game->current_tick)
+                if (abs(pace) < 2 & me->velocity_z > 0 && (1 + m_plannedTarget.elevationTime >= m_plannedTarget.tick - game->current_tick))
                 {
                     action->jump_speed = rules->ROBOT_MAX_JUMP_SPEED;
                 }
                 return;
             }
+            addSphere(sphere(ballpos, rules->BALL_RADIUS, p3d(1.0, 1.0, 1.0)));
         }
 
         futurePoint shootFrom;
         p3d ballFrom;
         int shootingPace, elevationTime;
+
+        if (!me->touch)
+            return;
+
+        m_plannedTarget.invalidate();
+
         if (pickShootingPoint(200, shootFrom, ballFrom, shootingPace, elevationTime))
         {
-            m_text = "Planning shot ";// + std::to_string(shootingPace);
+            m_text = "New shot " + std::to_string(shootingPace);
             addSphere(sphere(ballFrom, rules->BALL_RADIUS, p3d(0.0, 0.0, 0.0)));
             addSphere(sphere(shootFrom.pos, rules->ROBOT_RADIUS, p3d(1.0, 0.0, 1.0)));
 
             m_plannedTarget = PlannedShot(ballFrom, shootFrom.pos, game->current_tick + shootFrom.t, elevationTime);
             setSpeed(rules->ROBOT_MAX_GROUND_SPEED, p3d(m_plannedTarget.me.x - me->x, 0.0, m_plannedTarget.me.z - me->z));
-            return;
-
-            if (shootingPace <= 0)
-            {
-                m_text += "100%";
-                setSpeed(rules->ROBOT_MAX_GROUND_SPEED, p3d(shootFrom.pos.x - me->x, 0.0, shootFrom.pos.z - me->z));
-            }
-            else
-            {
-//                m_text += std::to_string(100 * (shootFrom.t - shootingPace) / shootFrom.t) + "%";
-//                setSpeed(rules->ROBOT_MAX_GROUND_SPEED * 0.3,//(shootAt.t - shootingPace) / shootAt.t,
-//                         p3d(shootFrom.pos.x - me->x, 0.0, shootFrom.pos.z - me->z));
-            }
-
-            if (elevationTime >= shootFrom.t)
-            {
-                action->jump_speed = rules->ROBOT_MAX_JUMP_SPEED;
-            }
         }
         else
         {
             m_text = "aligning !";
+            return;
             hasRunUp = false;
             alignShot();
         }
@@ -1249,6 +1242,11 @@ bool p3d::operator!=(const p3d &other)
 {
     return !(*this == other);
 }
+p3d p3d::to2d()
+{
+    return p3d(x, 0.0, z);
+}
+
 sphere::sphere(p3d pos, double _r, p3d _rgb) : x(pos.x), y(pos.y), z(pos.z), r(_r ), rgb(_rgb){}
 sphere::sphere(double _x, double _y, double _z, double _r, p3d _rgb) : x(_x), y(_y), z(_z), r(_r ), rgb(_rgb){}
 sphere::sphere() : x(0.0), y(0.0), z(0.0), r(0.0), rgb() {}
