@@ -3,7 +3,7 @@
 
 #include "Strategy.h"
 
-#define debugging_spheres_yan true
+//#define debugging_spheres_yan true
 
 struct p3d {
     double x;
@@ -83,7 +83,8 @@ private:
         void invalidate();
     };
 
-    PlannedShot m_plannedTarget;
+    PlannedShot m_plannedAttackerTarget;
+    PlannedShot m_plannedGoalieTarget;
 
     enum Role {
         Unassigned = 0,
