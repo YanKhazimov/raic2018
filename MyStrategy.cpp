@@ -608,7 +608,7 @@ void MyStrategy::act(const Robot& _me, const Rules& _rules, const Game& _game, A
 
     if (m_role == Role::Attacker)
     {
-        C_attack();
+        //C_attack();
         return;
     }
 
@@ -1049,30 +1049,42 @@ void MyStrategy::C_defend()
         {
             simulateTick(ballpos, ballv);
         }
-        addSphere(sphere(m_plannedGoalieTarget.ball, rules->BALL_RADIUS, p3d(0.0, 0.0, 0.0)));
-        addSphere(sphere(m_plannedGoalieTarget.me, rules->ROBOT_RADIUS, p3d(1.0, 0.0, 1.0)));
         double error = length(ballpos - m_plannedGoalieTarget.ball);
 
         if (error < 0.01)
         {
             m_plannedGoalieTarget.ball = ballpos;
+            m_plannedGoalieTarget.me = alignHitTo(ballpos - m_plannedGoalieTarget.me, ballpos);
+            addSphere(sphere(m_plannedGoalieTarget.ball, rules->BALL_RADIUS, p3d(0.0, 0.0, 0.0)));
+            addSphere(sphere(m_plannedGoalieTarget.me, rules->ROBOT_RADIUS, p3d(1.0, 0.0, 1.0)));
 
             futurePoint target(m_plannedGoalieTarget.me, p3d(), m_plannedGoalieTarget.tick - game->current_tick);
             int elevationTime = timeToElevate(target.pos.y);
             //std::tie(pace, elevationTime) = measureShot(target);
             int pace = target.t - sprintTime(target.pos, me, elevationTime);
-            if (pace > 0)
+            if (pace > 1)
             {
-                if (m_plannedGoalieTarget.me.z < me->z)
-                    runTo(m_plannedGoalieTarget.me);
+                double runupDist = brakeDistance(rules->ROBOT_MAX_GROUND_SPEED);
+                double runupZDiff = me->z - (m_plannedGoalieTarget.me.z - runupDist);
+                if (runupZDiff > 0 && me->velocity_z < 0.1 && pace > 18) //18 = ticks to full speed
+                {
+                    runTo(p3d(me->x, me->y, me->z - runupZDiff)); // run back
+                    m_text = "runup " + std::to_string(pace);
+                }
 
-                m_text = "waiting " + std::to_string(pace);
+//                if (m_plannedGoalieTarget.me.z < me->z)
+//                    runTo(m_plannedGoalieTarget.me);
+
+                else
+                {
+                    m_text = "waiting " + std::to_string(pace);
+                }
                 return;
             }
 
             m_text = "shooting " + std::to_string(pace);
             setSpeed(rules->ROBOT_MAX_GROUND_SPEED, p3d(m_plannedGoalieTarget.me.x - me->x, 0.0, m_plannedGoalieTarget.me.z - me->z));
-            if (abs(pace) < 2 & me->velocity_z > 0 && (m_plannedGoalieTarget.elevationTime >= m_plannedGoalieTarget.tick - game->current_tick))
+            if (abs(pace) < 2 & me->velocity_z > 0 && (1 + m_plannedGoalieTarget.elevationTime >= m_plannedGoalieTarget.tick - game->current_tick))
             {
                 action->jump_speed = rules->ROBOT_MAX_JUMP_SPEED;
                 if (m_plannedGoalieTarget.tick - game->current_tick < 2)
@@ -1119,7 +1131,7 @@ void MyStrategy::C_defend()
             continue;
 
         futurePoint ballSim(ballpos, ballv, t);
-        p3d target = alignHitTo(ballSim.pos - p3d(me->x, me->y, me->z), ballSim.pos);
+        p3d target = alignHitTo(ballSim.pos - p3d(ballv.x, ballv.y, ballv.z), ballSim.pos);
 
         int elevationT;
         if (target.y > maxH || (elevationT = timeToElevate(target.y)) == -1) // use nitro
@@ -1133,18 +1145,24 @@ void MyStrategy::C_defend()
 
         int pace = t - sprintT;
 
-        if (abs(pace) < abs(bestPace) || (abs(pace) == abs(bestPace) && pace > bestPace))
+        if (pace >= 0)
+        //if (abs(pace) < abs(bestPace) || (abs(pace) == abs(bestPace) && pace > bestPace))
         {
             bestIPoint = { ballSim, pace };
             shootFrom = target;
             targetTick = t;
+            break;
         }
+
+        if (pace == 0)
+            break;
     }
 
-    if (bestPace > 0)
+    if (bestPace >= 0)
         m_plannedGoalieTarget = PlannedShot(bestIPoint.first.pos, shootFrom, game->current_tick + targetTick, timeToElevate(shootFrom.y));
 
-    if (abs(bestPace) < criticalPaceDiff)
+    if (bestPace == 0)
+    //if (abs(bestPace) < criticalPaceDiff)
     {
         m_clearerId = me->id;
 
@@ -1166,7 +1184,7 @@ void MyStrategy::C_defend()
                 action->use_nitro = true;
         }
 
-        m_plannedGoalieTarget = PlannedShot(bestBallPos, shootFrom, game->current_tick + targetTick, elevationT);
+        //m_plannedGoalieTarget = PlannedShot(bestBallPos, shootFrom, game->current_tick + targetTick, elevationT);
     }
 
     p3d pos = getGoalieDefaultPosition(game->ball);
