@@ -2,6 +2,7 @@
 #define _MY_STRATEGY_H_
 
 #include "Strategy.h"
+#include <map>
 
 #define debugging_spheres_yan true
 
@@ -83,8 +84,14 @@ private:
         void invalidate();
     };
 
+    struct InterceptionStep {
+        p3d curV, targetV, curPos;
+        bool jump;
+    };
+
     PlannedShot m_plannedAttackerTarget;
     PlannedShot m_plannedGoalieTarget;
+    std::map<int, InterceptionStep> m_interceptionPlan;
 
     enum Role {
         Unassigned = 0,
@@ -106,13 +113,17 @@ private:
                                double secondsForward, std::vector<futurePoint>& points);
     bool ballGoesToGoal(const model::Ball &ball,
                         std::vector<futurePoint > &interceptionPoints);
-    std::pair<int, int> pickInterceptionPoint(const std::vector<futurePoint>& interceptionPoints);
-    int interceptionTime(futurePoint at, const Robot *robot);
-    int sprintTime(p3d at, const Robot *robot, int elevationTime);
-    int canReachInTime(futurePoint at, int &sprintTime, int &elevationTime);
+    std::pair<int, int> setInterceptionPoint(const std::vector<futurePoint>& interceptionPoints);
+    bool setInterceptionPoint(bool goalLine);
+    int sprintTime(p3d at, const Robot *robot);
+    int interceptionTime(p3d at, const Robot *robot, int elevationTime);
+    bool makeInterceptionPlan(p3d at, int targetTick);
+    int canReachInTime(futurePoint at, int &sprintT, int &elevationTime);
     bool interceptBounceAt(const futurePoint& point);
     std::pair<int, int> measureShot(futurePoint point);
     p3d getGoalieDefaultPosition(const model::Ball &ball);
+    bool isConsistent(const PlannedShot& plannedShot);
+    bool fasterOpponent(p3d ballpos, int t);
 
     void C_bullyGoalie();
     void C_bullyAttacker();
@@ -132,7 +143,8 @@ private:
     void simulateRoll(p3d& ballpos, p3d& ballv, const p3d& normal);
     void simulateBounce(p3d& ballPos, p3d& ballv);
     void simulateTick(p3d& ballpos, p3d& ballv);
-    int timeToElevate(double height);
+    std::pair<bool, int> timeToElevate(double height);
+    //int timeToElevate(double height);
     bool inGoalSector(p3d ballPos);
 
     void addSphere(sphere s);
