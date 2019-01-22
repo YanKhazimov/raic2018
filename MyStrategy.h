@@ -95,6 +95,8 @@ private:
     PlannedShot m_plannedGoalieTarget;
     std::map<int, InterceptionStep> m_interceptionPlan;
 
+    p3d deltaPos(p3d fromV, p3d toV, int mt);
+
     enum Role {
         Unassigned = 0,
         Goalie,

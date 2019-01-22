@@ -1,12 +1,12 @@
 {
   "mode": "Free",
   "position": {
-    "x": 10.865742,
-    "y": 8.3599825,
-    "z": -58.05244
+    "x": 24.976803,
+    "y": 11.333281,
+    "z": 0.1449455
   },
-  "rotation": 34.377052,
-  "attack_angle": 0.17265876,
+  "rotation": 38.351788,
+  "attack_angle": 0.3971591,
   "renderer": 1,
   "outside_wall_opacity": 0.5
 }
