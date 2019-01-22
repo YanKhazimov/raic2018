@@ -16,16 +16,6 @@ MyStrategy::MyStrategy()
 }
 
 const int TICKS = 60;
-double MyStrategy::brakeDistance(double initialSpeed)
-{
-    double result = 0.0;
-    double v = initialSpeed;
-    while (v > 0.0) {
-        v -= rules->ROBOT_ACCELERATION / TICKS;
-        result += v / TICKS;
-    }
-    return result;
-}
 
 double sign(double x)
 {
@@ -35,6 +25,17 @@ double sign(double x)
 bool eq(double a, double b)
 {
     return fabs(a - b) <= std::numeric_limits<double>::epsilon();
+}
+
+double MyStrategy::brakeDistance(double initialSpeed)
+{
+    double result = 0.0;
+    double v = initialSpeed;
+    while (v > 0.0 && !eq(v, 0.0)) {
+        result += v / TICKS;
+        v -= rules->ROBOT_ACCELERATION / TICKS;
+    }
+    return result;
 }
 
 double distanceXZ(p3d a, p3d b)
@@ -718,7 +719,7 @@ bool MyStrategy::interceptBounceAt(const futurePoint& point)
 
 std::pair<int, int> MyStrategy::measureShot(futurePoint target)
 {
-    int elevationTime = timeToElevate(target.pos.y);
+    int elevationTime = timeToElevate(target.pos.y).second;
     if (elevationTime == -1)
         return { -criticalPaceDiff, -1 };
 
@@ -1047,7 +1048,7 @@ bool MyStrategy::isConsistent(const MyStrategy::PlannedShot &plannedShot)
         simulateTick(ballpos, ballv);
     }
     double error = length(ballpos - m_plannedGoalieTarget.ball);
-    return error < 0.001;
+    return error < 0.01;
 }
 
 void MyStrategy::C_defend()
@@ -1078,7 +1079,7 @@ void MyStrategy::C_defend()
         }
         else
         {
-            m_text = "NEW SHOT ";
+            m_text = "NEW PLAN ";
         }
     }
 
@@ -1086,38 +1087,16 @@ void MyStrategy::C_defend()
     addSphere(sphere(m_plannedGoalieTarget.ball, rules->BALL_RADIUS, p3d(0.0, 0.0, 0.0)));
     addSphere(sphere(m_plannedGoalieTarget.me, rules->ROBOT_RADIUS, p3d(1.0, 0.0, 1.0)));
 
-    futurePoint target(m_plannedGoalieTarget.me, p3d(), m_plannedGoalieTarget.tick - game->current_tick);
-    int elevationTime = timeToElevate(target.pos.y);
-    //std::tie(pace, elevationTime) = measureShot(target);
-    int pace = target.t - interceptionTime(target.pos, me, elevationTime);
-    if (pace > 1)
-    {
-        double runupDist = brakeDistance(rules->ROBOT_MAX_GROUND_SPEED);
-        double runupZDiff = me->z - (m_plannedGoalieTarget.me.z - runupDist);
-        if (runupZDiff > 0 && me->velocity_z < 0.1 && pace > 18) //18 = ticks to full speed
-        {
-            runTo(p3d(me->x, me->y, me->z - runupZDiff)); // run back
-            m_text = "runup " + std::to_string(pace);
-        }
+    action->target_velocity_x = m_interceptionPlan[game->current_tick].targetV.x;
+    action->target_velocity_y = m_interceptionPlan[game->current_tick].targetV.y;
+    action->target_velocity_z = m_interceptionPlan[game->current_tick].targetV.z;
+    action->jump_speed = m_interceptionPlan[game->current_tick].jump ? rules->ROBOT_MAX_JUMP_SPEED : 0.0;
 
-        //                if (m_plannedGoalieTarget.me.z < me->z)
-        //                    runTo(m_plannedGoalieTarget.me);
+    double speedError = length(p3d(me->velocity_x, me->velocity_y, me->velocity_z) - m_interceptionPlan[game->current_tick].curV);
+    double posError = length(p3d(me->x, me->y, me->z) - m_interceptionPlan[game->current_tick].curPos);
 
-        else
-        {
-            m_text = "waiting " + std::to_string(pace);
-        }
-        return;
-    }
-
-    m_text = "shooting " + std::to_string(pace);
-    setSpeed(rules->ROBOT_MAX_GROUND_SPEED, p3d(m_plannedGoalieTarget.me.x - me->x, 0.0, m_plannedGoalieTarget.me.z - me->z));
-    if (abs(pace) < 2 & me->velocity_z > 0 && (1 + m_plannedGoalieTarget.elevationTime >= m_plannedGoalieTarget.tick - game->current_tick))
-    {
-        action->jump_speed = rules->ROBOT_MAX_JUMP_SPEED;
-        if (m_plannedGoalieTarget.tick - game->current_tick < 2)
-            action->use_nitro = true;
-    }
+    std::string stage = m_interceptionPlan[game->current_tick].stage;
+    m_text += stage + " " + std::to_string(speedError) + " " + std::to_string(posError);
 }
 
 bool MyStrategy::fasterOpponent(p3d ballpos, int t)
@@ -1164,7 +1143,7 @@ bool MyStrategy::setInterceptionPoint(bool goalLine)
         if (fabs(ballpos.x) > rules->arena.goal_width/2 + rules->arena.goal_side_radius)
             continue;
 
-        if (ballpos.z > 0 || fasterOpponent(ballpos, t))
+        if (ballpos.z > 0)// || fasterOpponent(ballpos, t))
             continue;
 
         p3d shootFrom = alignHitTo(goalBack + (ballpos - goalBack) * 2, ballpos);
@@ -1283,16 +1262,17 @@ bool MyStrategy::makeInterceptionPlan(p3d at, int targetTick)
 
     p3d myPos(me->x, me->y, me->z);
     p3d myV(me->velocity_x, me->velocity_y, me->velocity_z);
-    int stopTime = 0;
 
-    m_interceptionPlan[game->current_tick].curPos = myPos;
     m_interceptionPlan[game->current_tick].curV = myV;
+    m_interceptionPlan[game->current_tick].curPos = myPos;
 
     // 1. Stop
+    int stopTime = 0;
     while (!eq(length(myV), 0.0)) {
         p3d targetV = myV * (-1.0);
         m_interceptionPlan[game->current_tick + stopTime].targetV = targetV;
         m_interceptionPlan[game->current_tick + stopTime].jump = false;
+        m_interceptionPlan[game->current_tick + stopTime].stage = "Stop";
         myV = normalize(myV) * std::max(0.0, (length(myV) - rules->ROBOT_ACCELERATION * (1.0 / TICKS)));
         myPos = myPos + myV * (1.0 / TICKS);
         ++stopTime;
@@ -1309,6 +1289,108 @@ bool MyStrategy::makeInterceptionPlan(p3d at, int targetTick)
     p3d runupPos = at + normalize(goalBack - at) * (flyDist + accelDist);
     if (runupPos.z < goalBack.z)
         runupPos = goalBack;
+    if (runupPos.z > -rules->arena.depth/2)
+    {
+        runupPos = goalBack + (at - goalBack) * ((rules->arena.goal_depth - rules->arena.bottom_radius) / (at.z - goalBack.z)); // goalline
+    }
+    runupPos.y = me->radius;
+    double distToRunup = distanceXZ(runupPos, myPos);
+    int runupTime = 0;
+    while (distToRunup > 0 && !eq(distToRunup, 0)) {
+        p3d targetV;
+        bool acc = distToRunup > brakeDistance(length(myV) + rules->ROBOT_ACCELERATION / TICKS);
+        double newVLen;
+        if (acc)
+        {
+            targetV = normalize(runupPos - myPos) * rules->ROBOT_MAX_GROUND_SPEED;
+            newVLen = std::min(rules->ROBOT_MAX_GROUND_SPEED, length(myV) + rules->ROBOT_ACCELERATION * (1.0 / TICKS));
+        }
+        else
+        {
+            targetV = p3d();
+            newVLen = std::max(0.0, length(myV) - rules->ROBOT_ACCELERATION * (1.0 / TICKS));
+            if (eq(newVLen, 0.0))
+            {
+                // moving last bit
+                newVLen = distToRunup * TICKS;
+                targetV = normalize(runupPos - myPos) * newVLen;
+            }
+        }
+        m_interceptionPlan[game->current_tick + stopTime + runupTime].targetV = targetV;
+        m_interceptionPlan[game->current_tick + stopTime + runupTime].jump = false;
+        m_interceptionPlan[game->current_tick + stopTime + runupTime].stage = "Runup";
+        myV = normalize(runupPos - myPos) * newVLen;
+        myPos = myPos + myV * (1.0 / TICKS);
+        ++runupTime;
+        distToRunup -= newVLen * (1.0 / TICKS);
+        m_interceptionPlan[game->current_tick + stopTime + runupTime].curPos = myPos;
+        m_interceptionPlan[game->current_tick + stopTime + runupTime].curV = myV;
+    }
+
+    // 3. Calculate Pace
+    int timeToTakeoff = targetTick - game->current_tick - stopTime - runupTime - elevationTime.second;
+    double distToTarget = distanceXZ(at, runupPos);
+
+    double vAlong = 0.0;
+    double distanceCovered = 0.0;
+    int takesTicks = 0;
+    while (distanceCovered < distToTarget)
+    {
+        ++takesTicks;
+
+        if (distToTarget - distanceCovered > vAlong * elevationTime.second)
+        {
+            vAlong += rules->ROBOT_ACCELERATION * (1.0 / TICKS);
+            vAlong = std::min(vAlong, rules->ROBOT_MAX_GROUND_SPEED);
+        }
+
+        distanceCovered += vAlong * (1.0 / TICKS);
+    }
+    const int pace = timeToTakeoff - takesTicks;
+    if (pace < 0)
+        return false;
+
+    // 4. Wait
+    int waitTime = 0;
+    while (waitTime < pace) {
+        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime].targetV = p3d();
+        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime].jump = false;
+        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime].stage = "Wait";
+        ++waitTime;
+        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime].curPos = myPos;
+        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime].curV = myV;
+    }
+
+    // 5. Accelerate + run
+    int timeToRun = timeToTakeoff - pace;
+    int runTime = 0;
+    while (runTime <= timeToRun) {
+        p3d targetV = normalize(at - runupPos) * rules->ROBOT_MAX_GROUND_SPEED;
+        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime + runTime].targetV = targetV;
+        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime + runTime].jump = false;
+        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime + runTime].stage = "Run";
+        double newVLen = std::min(rules->ROBOT_MAX_GROUND_SPEED, length(myV) + rules->ROBOT_ACCELERATION * (1.0 / TICKS));
+        myV = normalize(at - runupPos) * newVLen;
+        myPos = myPos + myV * (1.0 / TICKS);
+        ++runTime;
+        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime + runTime].curPos = myPos;
+        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime + runTime].curV = myV;
+    }
+
+    // 6. Jump
+    int jumpTime = game->current_tick + stopTime + runupTime + waitTime + runTime;
+    while (jumpTime < targetTick) {
+        p3d targetV = myV;
+        m_interceptionPlan[jumpTime].targetV = targetV;
+        m_interceptionPlan[jumpTime].jump = true;
+        m_interceptionPlan[jumpTime].stage = "Jump";
+        ++jumpTime;
+        myPos = myPos + myV * (1.0 / TICKS);
+        m_interceptionPlan[jumpTime].curPos = myPos;
+        m_interceptionPlan[jumpTime].curV = myV;
+    }
+
+    return true;
 }
 
 int MyStrategy::canReachInTime(futurePoint at, int& sprintT, int& elevationTime)
@@ -1359,6 +1441,14 @@ bool p3d::operator==(const p3d &other)
 bool p3d::operator!=(const p3d &other)
 {
     return !(*this == other);
+}
+
+p3d &p3d::operator=(const p3d &other)
+{
+    x = other.x;
+    y = other.y;
+    z = other.z;
+    return *this;
 }
 p3d p3d::to2d()
 {

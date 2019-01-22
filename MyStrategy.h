@@ -18,6 +18,7 @@ struct p3d {
     p3d operator* (const double& mult) const;
     bool operator==(const p3d& other);
     bool operator!=(const p3d& other);
+    p3d& operator=(const p3d& other);
     p3d to2d();
 };
 
@@ -87,6 +88,7 @@ private:
     struct InterceptionStep {
         p3d curV, targetV, curPos;
         bool jump;
+        std::string stage;
     };
 
     PlannedShot m_plannedAttackerTarget;
