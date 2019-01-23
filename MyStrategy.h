@@ -118,10 +118,10 @@ private:
     bool ballGoesToGoal(const model::Ball &ball,
                         std::vector<futurePoint > &interceptionPoints);
     std::pair<int, int> setInterceptionPoint(const std::vector<futurePoint>& interceptionPoints);
-    bool setInterceptionPoint(bool goalLine);
+    bool setInterceptionPoint(bool &goalLine);
     int sprintTime(p3d at, const Robot *robot);
     int interceptionTime(p3d at, const Robot *robot, int elevationTime);
-    bool makeInterceptionPlan(p3d at, int targetTick);
+    bool makeInterceptionPlan(p3d at, int targetTick, bool must);
     int canReachInTime(futurePoint at, int &sprintT, int &elevationTime);
     bool interceptBounceAt(const futurePoint& point);
     std::pair<int, int> measureShot(futurePoint point);
