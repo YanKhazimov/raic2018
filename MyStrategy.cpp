@@ -1405,17 +1405,18 @@ bool MyStrategy::makeInterceptionPlan(p3d at, int targetTick, bool must)
             pace += stopTime + runupTime;
 
             m_interceptionPlan.clear();
-            p3d myPos(me->x, me->y, me->z);
-            p3d myV(me->velocity_x, me->velocity_y, me->velocity_z);
+            myPos = p3d(me->x, me->y, me->z);
+            myV = p3d(me->velocity_x, me->velocity_y, me->velocity_z);
             m_interceptionPlan[game->current_tick].curV = myV;
             m_interceptionPlan[game->current_tick].curPos = myPos;
 
             stopTime = runupTime = 0;
 
-            p3d newRunupPos(at.x, me->radius, at.z);
+            runupPos = p3d(at.x, me->radius, at.z);
+            addSphere(sphere(runupPos, me->radius, p3d(1.0, 1.0, 1.0)));
 
-            double distToRunup = distanceXZ(newRunupPos, myPos);
-            while (distToRunup > 0.02) {
+            distToRunup = distanceXZ(runupPos, myPos);
+            while (distToRunup > 0.02 && myV != p3d()) {
                 p3d targetV;
                 p3d myVCur = myV;
                 if (distToRunup > brakeDistance(rules->ROBOT_MAX_GROUND_SPEED)) // cache
@@ -1437,7 +1438,7 @@ bool MyStrategy::makeInterceptionPlan(p3d at, int targetTick, bool must)
                 ++runupTime;
                 p3d deltaP = deltaPos(myVCur, myV, 100); // should be not optimized, not a straight movement!
                 myPos = myPos + deltaP;
-                distToRunup -= length(deltaP);
+                distToRunup = distanceXZ(runupPos, myPos);//-= length(deltaP);
                 m_interceptionPlan[game->current_tick + stopTime + runupTime].curPos = myPos;
                 m_interceptionPlan[game->current_tick + stopTime + runupTime].curV = myV;
             }
