@@ -93,12 +93,15 @@ private:
 
     struct InterceptionPlan {
         std::map<int, InterceptionStep> steps;
+
         p3d stopPos, runupPos, jumpPos;
         p3d ball;
         p3d me;
+
         int pace;
         int tick;
         int elevationTime;
+
         InterceptionPlan();
         InterceptionPlan(p3d _stopPos, p3d _runupPos, p3d _jumpPos, p3d _ball, p3d _me, int _pace, int _tick, int _elevationTime);
         bool isValid();
@@ -143,6 +146,7 @@ private:
     p3d getGoalieDefaultPosition(const model::Ball &ball);
     bool isConsistent(const InterceptionPlan &m_goaliePlan);
     bool fasterOpponent(p3d ballpos, int t);
+    void executePlan(int tick);
 
     void C_bullyGoalie();
     void C_bullyAttacker();
