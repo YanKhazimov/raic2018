@@ -11,7 +11,7 @@ using namespace model;
 
 MyStrategy::MyStrategy()
     : me(nullptr), rules(nullptr), game(nullptr), action(nullptr), m_role(Role::Unassigned),
-      m_plannedAttackerTarget(), m_plannedGoalieTarget()
+      m_plannedAttackerTarget(), m_goaliePlan()
 {
 }
 
@@ -679,7 +679,7 @@ std::string MyStrategy::custom_rendering()
     return m_json;
 }
 
-std::pair<int, int> MyStrategy::setInterceptionPoint(const std::vector<futurePoint>& interceptionPoints)
+std::pair<int, int> MyStrategy::pickInterceptionPoint(const std::vector<futurePoint>& interceptionPoints)
 {
     int iTime = 0;
     for (int i = 0; i < static_cast<int>(interceptionPoints.size()); ++i)
@@ -744,7 +744,7 @@ std::pair<int, int> MyStrategy::measureShot(futurePoint target)
 void MyStrategy::intercept(const std::vector<futurePoint>& interceptionPoints, bool homeOnly)
 {
     int interceptionTime = 0, iPointIndex = -1;
-    std::tie(iPointIndex, interceptionTime) = setInterceptionPoint(interceptionPoints);
+    std::tie(iPointIndex, interceptionTime) = pickInterceptionPoint(interceptionPoints);
 
     if (iPointIndex < 0 || iPointIndex >= interceptionPoints.size())
         return;
@@ -1051,21 +1051,20 @@ void MyStrategy::C_attack()
     }
 }
 
-bool MyStrategy::isConsistent(const MyStrategy::PlannedShot &plannedShot)
+bool MyStrategy::isConsistent(const MyStrategy::InterceptionPlan &m_goaliePlan)
 {
     p3d ballpos(game->ball.x, game->ball.y, game->ball.z);
     p3d ballv(game->ball.velocity_x, game->ball.velocity_y, game->ball.velocity_z);
-    for (int t = game->current_tick + 1; t <= plannedShot.tick; ++t)
+    for (int t = game->current_tick + 1; t <= m_goaliePlan.tick; ++t)
     {
         simulateTick(ballpos, ballv);
     }
-    double error = length(ballpos - m_plannedGoalieTarget.ball);
+    double error = length(ballpos - m_goaliePlan.ball);
     return error < 1;//0.01;
 }
 
 void MyStrategy::C_defend()
 {
-    double mel = maxElevation();
     if (m_clearerId == me->id)
         m_clearerId = -1;
 
@@ -1081,13 +1080,13 @@ void MyStrategy::C_defend()
     if (!me->touch)
     {
         m_text = "just flying";
-        m_plannedGoalieTarget.invalidate();
+        m_goaliePlan.invalidate();
         return;
     }
 
-    if (!m_plannedGoalieTarget.isValid() || !isConsistent(m_plannedGoalieTarget))
+    if (!m_goaliePlan.isValid() || !isConsistent(m_goaliePlan))
     {
-        m_plannedGoalieTarget.invalidate();
+        m_goaliePlan.invalidate();
         bool goalLine = false;
         bool newPlan = setInterceptionPoint(goalLine);
 
@@ -1104,18 +1103,18 @@ void MyStrategy::C_defend()
     }
 
     // going for the planned shot
-    addSphere(sphere(m_plannedGoalieTarget.ball, rules->BALL_RADIUS, p3d(0.0, 0.0, 0.0)));
-    addSphere(sphere(m_plannedGoalieTarget.me, rules->ROBOT_RADIUS, p3d(1.0, 0.0, 1.0)));
+    //addSphere(sphere(m_plannedGoalieTarget.ball, rules->BALL_RADIUS, p3d(0.0, 0.0, 0.0)));
+    //addSphere(sphere(m_plannedGoalieTarget.me, rules->ROBOT_RADIUS, p3d(1.0, 0.0, 1.0)));
 
-    action->target_velocity_x = m_interceptionPlan[game->current_tick].targetV.x;
-    action->target_velocity_y = m_interceptionPlan[game->current_tick].targetV.y;
-    action->target_velocity_z = m_interceptionPlan[game->current_tick].targetV.z;
-    action->jump_speed = m_interceptionPlan[game->current_tick].jump ? rules->ROBOT_MAX_JUMP_SPEED : 0.0;
+    action->target_velocity_x = m_goaliePlan.steps[game->current_tick].targetV.x;
+    action->target_velocity_y = m_goaliePlan.steps[game->current_tick].targetV.y;
+    action->target_velocity_z = m_goaliePlan.steps[game->current_tick].targetV.z;
+    action->jump_speed = m_goaliePlan.steps[game->current_tick].jump ? rules->ROBOT_MAX_JUMP_SPEED : 0.0;
 
-    double speedError = length(p3d(me->velocity_x, me->velocity_y, me->velocity_z) - m_interceptionPlan[game->current_tick].curV);
-    double posError = length(p3d(me->x, me->y, me->z) - m_interceptionPlan[game->current_tick].curPos);
+    double speedError = length(p3d(me->velocity_x, me->velocity_y, me->velocity_z) - m_goaliePlan.steps[game->current_tick].curV);
+    double posError = length(p3d(me->x, me->y, me->z) - m_goaliePlan.steps[game->current_tick].curPos);
 
-    std::string stage = m_interceptionPlan[game->current_tick].stage;
+    std::string stage = m_goaliePlan.steps[game->current_tick].stage;
     m_text += stage + " " + std::to_string(speedError) + " " + std::to_string(posError);
 }
 
@@ -1157,9 +1156,10 @@ bool MyStrategy::setInterceptionPoint(bool& goalLine)
             goalLine = true;
             p3d shootFrom = alignHitTo(goalBack + (prevBallpos - goalBack) * 2, prevBallpos);
 
+            m_goaliePlan.ball = prevBallpos;
             bool res = makeInterceptionPlan(shootFrom, game->current_tick + t - 1, true);
 
-            m_plannedGoalieTarget = PlannedShot(prevBallpos, shootFrom, game->current_tick + t - 1, timeToElevate(shootFrom.y).second);
+            //m_goaliePlan = PlannedShot(prevBallpos, shootFrom, game->current_tick + t - 1, timeToElevate(shootFrom.y).second);
             return true;
         }
 
@@ -1173,7 +1173,8 @@ bool MyStrategy::setInterceptionPoint(bool& goalLine)
 
         if (makeInterceptionPlan(shootFrom, game->current_tick + t, false))
         {
-            m_plannedGoalieTarget = PlannedShot(ballpos, shootFrom, game->current_tick + t, timeToElevate(shootFrom.y).second);
+            m_goaliePlan.ball = ballpos;
+            //m_goaliePlan = PlannedShot(ballpos, shootFrom, game->current_tick + t, timeToElevate(shootFrom.y).second);
             return true;
         }
     }
@@ -1295,37 +1296,43 @@ p3d MyStrategy::deltaPos(p3d fromV, p3d toV, int mt)
 
 bool MyStrategy::makeInterceptionPlan(p3d at, int targetTick, bool must)
 {
-    m_interceptionPlan.clear();
+    m_goaliePlan.invalidate();
 
     std::pair<bool, int> elevationTime = timeToElevate(at.y);
     if (!elevationTime.first)
     {
         if (must)
+        {
             at.y = maxElevation();
+            m_goaliePlan.me = at;
+        }
         else
+        {
+            m_goaliePlan.me = at;
             return false;
+        }
     }
 
     p3d myPos(me->x, me->y, me->z);
     p3d myV(me->velocity_x, me->velocity_y, me->velocity_z);
 
-    m_interceptionPlan[game->current_tick].curV = myV;
-    m_interceptionPlan[game->current_tick].curPos = myPos;
+    m_goaliePlan.steps[game->current_tick].curV = myV;
+    m_goaliePlan.steps[game->current_tick].curPos = myPos;
 
     // 1. Stop
     int stopTime = 0;
     while (!eq(length(myV), 0.0)) {
         p3d targetV = myV * (-1.0);
-        m_interceptionPlan[game->current_tick + stopTime].targetV = targetV;
-        m_interceptionPlan[game->current_tick + stopTime].jump = false;
-        m_interceptionPlan[game->current_tick + stopTime].stage = "Stop";
+        m_goaliePlan.steps[game->current_tick + stopTime].targetV = targetV;
+        m_goaliePlan.steps[game->current_tick + stopTime].jump = false;
+        m_goaliePlan.steps[game->current_tick + stopTime].stage = "Stop";
         p3d myVCur = myV;
         ++stopTime;
         myV = normalize(myV) * std::max(0.0, (length(myV) - rules->ROBOT_ACCELERATION * (1.0 / TICKS)));
         myPos = myPos + deltaPos(myVCur, myV, 100);
         //myPos = myPos + myV * (1.0 / TICKS);
-        m_interceptionPlan[game->current_tick + stopTime].curPos = myPos;
-        m_interceptionPlan[game->current_tick + stopTime].curV = myV;
+        m_goaliePlan.steps[game->current_tick + stopTime].curPos = myPos;
+        m_goaliePlan.steps[game->current_tick + stopTime].curV = myV;
     }
 
     // 2. Run-up
@@ -1360,9 +1367,9 @@ bool MyStrategy::makeInterceptionPlan(p3d at, int targetTick, bool must)
             targetV = p3d();
             newVLen = std::max(0.0, length(myV) - rules->ROBOT_ACCELERATION * (1.0 / TICKS));
         }
-        m_interceptionPlan[game->current_tick + stopTime + runupTime].targetV = targetV;
-        m_interceptionPlan[game->current_tick + stopTime + runupTime].jump = false;
-        m_interceptionPlan[game->current_tick + stopTime + runupTime].stage = "Runup";
+        m_goaliePlan.steps[game->current_tick + stopTime + runupTime].targetV = targetV;
+        m_goaliePlan.steps[game->current_tick + stopTime + runupTime].jump = false;
+        m_goaliePlan.steps[game->current_tick + stopTime + runupTime].stage = "Runup";
         p3d myVCur = myV;
         ++runupTime;
         myV = normalize(runupPos - myPos) * newVLen;
@@ -1370,8 +1377,8 @@ bool MyStrategy::makeInterceptionPlan(p3d at, int targetTick, bool must)
         myPos = myPos + deltaP;
         //myPos = myPos + myV * (1.0 / TICKS);
         distToRunup -= length(deltaP);//newVLen * (1.0 / TICKS); //
-        m_interceptionPlan[game->current_tick + stopTime + runupTime].curPos = myPos;
-        m_interceptionPlan[game->current_tick + stopTime + runupTime].curV = myV;
+        m_goaliePlan.steps[game->current_tick + stopTime + runupTime].curPos = myPos;
+        m_goaliePlan.steps[game->current_tick + stopTime + runupTime].curV = myV;
     }
 
     // 3. Calculate Pace
@@ -1400,20 +1407,18 @@ bool MyStrategy::makeInterceptionPlan(p3d at, int targetTick, bool must)
         {
             pace += runupTime;
 
-            auto planIter = m_interceptionPlan.begin();
-            auto nextIter = m_interceptionPlan.end();
-            for (; planIter != m_interceptionPlan.end(); ++planIter)
+            auto planIter = m_goaliePlan.steps.begin();
+            auto nextIter = m_goaliePlan.steps.end();
+            for (; planIter != m_goaliePlan.steps.end(); ++planIter)
                 if (planIter->second.stage != "Stop")
                 {
                     nextIter = planIter;
                     std::advance(nextIter, 1);
                     break;
                 }
-            m_interceptionPlan.erase(nextIter, m_interceptionPlan.end());
+            m_goaliePlan.steps.erase(nextIter, m_goaliePlan.steps.end());
 
-            //m_interceptionPlan.clear();
-
-            if (planIter != m_interceptionPlan.end())
+            if (planIter != m_goaliePlan.steps.end())
             {
                 myPos = planIter->second.curPos;
                 myV = planIter->second.curV;
@@ -1446,24 +1451,24 @@ bool MyStrategy::makeInterceptionPlan(p3d at, int targetTick, bool must)
                     targetV = p3d();
                     newVLen = std::max(0.0, length(myV) - rules->ROBOT_ACCELERATION * (1.0 / TICKS));
                 }
-                m_interceptionPlan[game->current_tick + stopTime + runupTime].targetV = targetV;
-                m_interceptionPlan[game->current_tick + stopTime + runupTime].jump = false;
-                m_interceptionPlan[game->current_tick + stopTime + runupTime].stage = "Short Runup";
+                m_goaliePlan.steps[game->current_tick + stopTime + runupTime].targetV = targetV;
+                m_goaliePlan.steps[game->current_tick + stopTime + runupTime].jump = false;
+                m_goaliePlan.steps[game->current_tick + stopTime + runupTime].stage = "Short Runup";
                 p3d myVCur = myV;
                 ++runupTime;
                 myV = normalize(runupPos - myPos) * newVLen;
                 p3d deltaP = deltaPos(myVCur, myV, 100);
                 myPos = myPos + deltaP;
                 distToRunup -= length(deltaP);
-                m_interceptionPlan[game->current_tick + stopTime + runupTime].curPos = myPos;
-                m_interceptionPlan[game->current_tick + stopTime + runupTime].curV = myV;
+                m_goaliePlan.steps[game->current_tick + stopTime + runupTime].curPos = myPos;
+                m_goaliePlan.steps[game->current_tick + stopTime + runupTime].curV = myV;
             }
 
             timeToTakeoff = targetTick - game->current_tick - stopTime - runupTime - elevationTime.second;
         }
         else
         {
-            m_interceptionPlan.clear();
+            m_goaliePlan.steps.clear();
             return false;
         }
     }
@@ -1471,12 +1476,12 @@ bool MyStrategy::makeInterceptionPlan(p3d at, int targetTick, bool must)
     // 4. Wait
     int waitTime = 0;
     while (waitTime < pace) {
-        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime].targetV = p3d();
-        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime].jump = false;
-        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime].stage = "Wait";
+        m_goaliePlan.steps[game->current_tick + stopTime + runupTime + waitTime].targetV = p3d();
+        m_goaliePlan.steps[game->current_tick + stopTime + runupTime + waitTime].jump = false;
+        m_goaliePlan.steps[game->current_tick + stopTime + runupTime + waitTime].stage = "Wait";
         ++waitTime;
-        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime].curPos = myPos;
-        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime].curV = myV;
+        m_goaliePlan.steps[game->current_tick + stopTime + runupTime + waitTime].curPos = myPos;
+        m_goaliePlan.steps[game->current_tick + stopTime + runupTime + waitTime].curV = myV;
     }
 
     // 5. Accelerate + run
@@ -1485,33 +1490,33 @@ bool MyStrategy::makeInterceptionPlan(p3d at, int targetTick, bool must)
     p3d runNormal = normalize(p3d(at.x, me->radius, at.z) - runupPos);
     while (runTime <= timeToRun) {
         p3d targetV = runNormal * rules->ROBOT_MAX_GROUND_SPEED;
-        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime + runTime].targetV = targetV;
-        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime + runTime].jump = false;
-        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime + runTime].stage = "Run";
+        m_goaliePlan.steps[game->current_tick + stopTime + runupTime + waitTime + runTime].targetV = targetV;
+        m_goaliePlan.steps[game->current_tick + stopTime + runupTime + waitTime + runTime].jump = false;
+        m_goaliePlan.steps[game->current_tick + stopTime + runupTime + waitTime + runTime].stage = "Run";
         p3d curV = myV;
         ++runTime;
         double newVLen = std::min(rules->ROBOT_MAX_GROUND_SPEED, length(myV) + rules->ROBOT_ACCELERATION * (1.0 / TICKS));
         myV = runNormal * newVLen;
         myPos = myPos + deltaPos(curV, myV, 100);//myV * (1.0 / TICKS);
-        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime + runTime].curPos = myPos;
-        m_interceptionPlan[game->current_tick + stopTime + runupTime + waitTime + runTime].curV = myV;
+        m_goaliePlan.steps[game->current_tick + stopTime + runupTime + waitTime + runTime].curPos = myPos;
+        m_goaliePlan.steps[game->current_tick + stopTime + runupTime + waitTime + runTime].curV = myV;
     }
 
     // 6. Jump
     int jumpTime = game->current_tick + stopTime + runupTime + waitTime + runTime;
 
     int ttt = timeToElevate(at.y + rules->BALL_RADIUS/2).second;
-    m_interceptionPlan[pace < 0 ? (jumpTime - ttt) : (jumpTime - 1)].jump = true; //hack
+    m_goaliePlan.steps[pace < 0 ? (jumpTime - ttt) : (jumpTime - 1)].jump = true; //hack
 
     while (jumpTime < targetTick) {
         p3d targetV = myV;
-        m_interceptionPlan[jumpTime].targetV = targetV;
-        m_interceptionPlan[jumpTime].jump = true;
-        m_interceptionPlan[jumpTime].stage = "Jump";
+        m_goaliePlan.steps[jumpTime].targetV = targetV;
+        m_goaliePlan.steps[jumpTime].jump = true;
+        m_goaliePlan.steps[jumpTime].stage = "Jump";
         ++jumpTime;
         myPos = myPos + myV * (1.0 / TICKS);
-        m_interceptionPlan[jumpTime].curPos = myPos;
-        m_interceptionPlan[jumpTime].curV = myV;
+        m_goaliePlan.steps[jumpTime].curPos = myPos;
+        m_goaliePlan.steps[jumpTime].curV = myV;
     }
 
     return true;
@@ -1603,4 +1608,24 @@ bool MyStrategy::PlannedShot::isValid()
 void MyStrategy::PlannedShot::invalidate()
 {
     *this = PlannedShot();
+}
+
+MyStrategy::InterceptionPlan::InterceptionPlan() : stopPos(), runupPos(), jumpPos(), ball(), me(), pace(0), tick(0), elevationTime(-1)
+{
+}
+
+MyStrategy::InterceptionPlan::InterceptionPlan(p3d _stopPos, p3d _runupPos, p3d _jumpPos, p3d _ball, p3d _me,
+                                               int _pace, int _tick, int _elevationTime)
+    : stopPos(_stopPos), runupPos(_runupPos), jumpPos(_jumpPos), ball(_ball), me(_me), pace(_pace), tick(_tick), elevationTime(_elevationTime)
+{
+}
+
+bool MyStrategy::InterceptionPlan::isValid()
+{
+    return tick > 0;
+}
+
+void MyStrategy::InterceptionPlan::invalidate()
+{
+    *this = InterceptionPlan();
 }

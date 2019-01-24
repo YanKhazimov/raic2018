@@ -91,9 +91,24 @@ private:
         std::string stage;
     };
 
+    struct InterceptionPlan {
+        std::map<int, InterceptionStep> steps;
+        p3d stopPos, runupPos, jumpPos;
+        p3d ball;
+        p3d me;
+        int pace;
+        int tick;
+        int elevationTime;
+        InterceptionPlan();
+        InterceptionPlan(p3d _stopPos, p3d _runupPos, p3d _jumpPos, p3d _ball, p3d _me, int _pace, int _tick, int _elevationTime);
+        bool isValid();
+        void invalidate();
+    };
+
     PlannedShot m_plannedAttackerTarget;
-    PlannedShot m_plannedGoalieTarget;
-    std::map<int, InterceptionStep> m_interceptionPlan;
+    //PlannedShot m_plannedGoalieTarget;
+    //std::map<int, InterceptionStep> m_interceptionPlan;
+    InterceptionPlan m_goaliePlan;
 
     p3d deltaPos(p3d fromV, p3d toV, int mt);
 
@@ -117,7 +132,7 @@ private:
                                double secondsForward, std::vector<futurePoint>& points);
     bool ballGoesToGoal(const model::Ball &ball,
                         std::vector<futurePoint > &interceptionPoints);
-    std::pair<int, int> setInterceptionPoint(const std::vector<futurePoint>& interceptionPoints);
+    std::pair<int, int> pickInterceptionPoint(const std::vector<futurePoint>& interceptionPoints);
     bool setInterceptionPoint(bool &goalLine);
     int sprintTime(p3d at, const Robot *robot);
     int interceptionTime(p3d at, const Robot *robot, int elevationTime);
@@ -126,7 +141,7 @@ private:
     bool interceptBounceAt(const futurePoint& point);
     std::pair<int, int> measureShot(futurePoint point);
     p3d getGoalieDefaultPosition(const model::Ball &ball);
-    bool isConsistent(const PlannedShot& plannedShot);
+    bool isConsistent(const InterceptionPlan &m_goaliePlan);
     bool fasterOpponent(p3d ballpos, int t);
 
     void C_bullyGoalie();
