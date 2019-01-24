@@ -569,6 +569,7 @@ bool MyStrategy::pickShootingPoint(int ticks, futurePoint& bestTarget, futurePoi
     p3d ballv(game->ball.velocity_x, game->ball.velocity_y, game->ball.velocity_z);
     bestPace = -100;
     bestElevationTime = -100;
+    double maxH = maxElevation();
     for (int t = 1; t < ticks; ++t)
     {
         simulateTick(ballpos, ballv);
@@ -585,6 +586,9 @@ bool MyStrategy::pickShootingPoint(int ticks, futurePoint& bestTarget, futurePoi
 
         if (moveTarget.z > rules->arena.depth/2 &&
                 fabs(moveTarget.x) > rules->arena.width/2 - rules->arena.bottom_radius)
+            continue;
+
+        if (moveTarget.y > maxH)
             continue;
 
         p3d v1 = (goalTarget - ballpos).to2d();
@@ -628,7 +632,7 @@ void MyStrategy::act(const Robot& _me, const Rules& _rules, const Game& _game, A
 
     if (m_role == Role::Attacker)
     {
-        //C_attack();
+        C_attack();
         return;
     }
 
@@ -731,7 +735,7 @@ std::pair<int, int> MyStrategy::measureShot(futurePoint target)
     if (elevationTime == -1)
         return { -criticalPaceDiff, -1 };
 
-    int t = sprintTime(target.pos, me);//sprintTime(target.pos, me, elevationTime);
+    int t = sprintTime(target.pos, me);//interceptionTime(target.pos, me, elevationTime);//
     int pace = target.t - t;
 
     return { pace, elevationTime };
@@ -1255,17 +1259,17 @@ int MyStrategy::interceptionTime(p3d at, const Robot *robot, int elevationTime)
     double vAlong = eq(normalLength, 0.0) ? length(myV) : (dot(normal, myV) / normalLength);
     double distanceCovered = 0.0;
     int takesTicks = 0;
-    while (distanceCovered < myDistance)
+    while (distanceCovered + vAlong / TICKS * elevationTime < myDistance)
     {
         ++takesTicks;
 
-        if (myDistance - distanceCovered > vAlong * elevationTime)
-        {
-            vAlong += rules->ROBOT_ACCELERATION * (1.0 / TICKS);
-            vAlong = std::min(vAlong, rules->ROBOT_MAX_GROUND_SPEED);
-        }
+        double vCur = vAlong;
+        vAlong += rules->ROBOT_ACCELERATION * (1.0 / TICKS);
+        vAlong = std::min(vAlong, rules->ROBOT_MAX_GROUND_SPEED);
 
-        distanceCovered += vAlong * (1.0 / TICKS);
+        double deltaP = length(deltaPos(p3d(vCur, 0, 0), p3d(vAlong, 0, 0), 100));
+
+        distanceCovered += deltaP;
     }
 
     return takesTicks;
@@ -1377,16 +1381,14 @@ bool MyStrategy::makeInterceptionPlan(p3d at, int targetTick, bool must)
     double vAlong = 0.0;
     double distanceCovered = 0.0;
     int takesTicks = 0;
-    while (distanceCovered < distToTarget)
+    while (distanceCovered + vAlong / TICKS * elevationTime.second < distToTarget)
     {
         ++takesTicks;
 
         double vCur = vAlong;
-        if (distToTarget - distanceCovered > vAlong / TICKS * elevationTime.second)
-        {
-            vAlong += rules->ROBOT_ACCELERATION * (1.0 / TICKS);
-            vAlong = std::min(vAlong, rules->ROBOT_MAX_GROUND_SPEED);
-        }
+
+        vAlong += rules->ROBOT_ACCELERATION * (1.0 / TICKS);
+        vAlong = std::min(vAlong, rules->ROBOT_MAX_GROUND_SPEED);
 
         double deltaP = length(deltaPos(p3d(vCur, 0, 0), p3d(vAlong, 0, 0), 100));
         distanceCovered += deltaP;//vAlong * (1.0 / TICKS);

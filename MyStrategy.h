@@ -4,7 +4,7 @@
 #include "Strategy.h"
 #include <map>
 
-#define debugging_spheres_yan true
+//#define debugging_spheres_yan true
 
 struct p3d {
     double x;
