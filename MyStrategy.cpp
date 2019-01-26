@@ -632,7 +632,7 @@ void MyStrategy::act(const Robot& _me, const Rules& _rules, const Game& _game, A
 
     if (m_role == Role::Attacker)
     {
-        C_attack();
+        //C_attack();
         return;
     }
 
@@ -965,11 +965,20 @@ void MyStrategy::alignShot()
 
 void MyStrategy::C_attack()
 {
-    if (eq(game->ball.velocity_x, 0.0) && eq(game->ball.x, 0.0) &&
-            eq(game->ball.velocity_z, 0.0) && eq(game->ball.z, 0.0)) // kickoff
+    if (fabs(game->ball.velocity_x) < 0.01 && fabs(game->ball.x) < 0.01 &&
+            fabs(game->ball.velocity_z) < 0.01 && fabs(game->ball.z) < 0.01) // kickoff
     {
         sprintTo(p3d(), true);
         action->use_nitro = true;
+        return;
+    }
+
+    if (m_goaliePlan.isValid() &&
+            (m_goaliePlan.steps[game->current_tick].stage == "Old Interception" ||
+             m_goaliePlan.steps[game->current_tick].stage == "Run" ||
+             m_goaliePlan.steps[game->current_tick].stage == "Jump"))
+    {
+        C_bullyAttacker();
         return;
     }
 
@@ -1063,14 +1072,23 @@ bool MyStrategy::isConsistent(const MyStrategy::InterceptionPlan &m_goaliePlan)
     return error < 1;//0.01;
 }
 
-void MyStrategy::executePlan(int tick)
+void MyStrategy::executePlan()
 {
     std::string stage = m_goaliePlan.steps[game->current_tick].stage;
     m_text += stage;
 
     if (stage == "Old Interception")
     {
-        sprintTo(p3d(game->ball.x, game->ball.y, game->ball.z), true);
+        //sprintTo(p3d(game->ball.x, game->ball.y, game->ball.z), true);
+        setSpeed(rules->ROBOT_MAX_GROUND_SPEED, p3d(game->ball.x - me->x, 0.0, game->ball.z - me->z));
+
+        bool jump = timeToElevate(m_goaliePlan.ball.y).second >= m_goaliePlan.tick - game->current_tick - 1;
+        if (jump)
+        {
+            action->jump_speed = rules->ROBOT_MAX_JUMP_SPEED;
+            action->use_nitro = true;
+        }
+
         return;
 
 //        std::vector<futurePoint> interceptionPoints;
@@ -1132,7 +1150,7 @@ void MyStrategy::C_defend()
     }
 
     // going for the planned shot
-    executePlan(game->current_tick);
+    executePlan();
 }
 
 bool MyStrategy::fasterOpponent(p3d ballpos, int t)
@@ -1185,6 +1203,9 @@ bool MyStrategy::setInterceptionPoint(bool& goalLine)
             continue;
 
         if (ballpos.z > 0)// || fasterOpponent(ballpos, t))
+            continue;
+
+        if (ballpos.z > -rules->arena.depth/4 && fasterOpponent(ballpos, t))
             continue;
 
         p3d shootFrom = alignHitTo(goalBack + (ballpos - goalBack) * 2, ballpos);

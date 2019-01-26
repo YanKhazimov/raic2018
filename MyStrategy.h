@@ -4,7 +4,7 @@
 #include "Strategy.h"
 #include <map>
 
-//#define debugging_spheres_yan true
+#define debugging_spheres_yan true
 
 struct p3d {
     double x;
@@ -146,7 +146,7 @@ private:
     p3d getGoalieDefaultPosition(const model::Ball &ball);
     bool isConsistent(const InterceptionPlan &m_goaliePlan);
     bool fasterOpponent(p3d ballpos, int t);
-    void executePlan(int tick);
+    void executePlan();
 
     void C_bullyGoalie();
     void C_bullyAttacker();
