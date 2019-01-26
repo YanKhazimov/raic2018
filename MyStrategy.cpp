@@ -1079,7 +1079,6 @@ void MyStrategy::executePlan()
 
     if (stage == "Old Interception")
     {
-        //sprintTo(p3d(game->ball.x, game->ball.y, game->ball.z), true);
         setSpeed(rules->ROBOT_MAX_GROUND_SPEED, p3d(game->ball.x - me->x, 0.0, game->ball.z - me->z));
 
         bool jump = timeToElevate(m_goaliePlan.ball.y).second >= m_goaliePlan.tick - game->current_tick - 1;
@@ -1090,15 +1089,22 @@ void MyStrategy::executePlan()
         }
 
         return;
+    }
+    else if (stage == "Instant Interception")
+    {
+        p3d ballpos(game->ball.x, me->radius, game->ball.z);
+        p3d myPos(me->x, me->y, me->z);
+        p3d hitPoint = alignHitTo(myPos + (ballpos - myPos) * 2, ballpos);
 
-//        std::vector<futurePoint> interceptionPoints;
-//        bool onTarget = ballGoesToGoal(game->ball, interceptionPoints);
-//        if (onTarget)
-//        {
-//            intercept(interceptionPoints, true);
-//            return;
-//        }
-//        return;
+        setSpeed(rules->ROBOT_MAX_GROUND_SPEED, hitPoint - myPos);
+        bool jump = timeToElevate(m_goaliePlan.ball.y).second >= m_goaliePlan.tick - game->current_tick - 1;
+        if (jump)
+        {
+            action->jump_speed = rules->ROBOT_MAX_JUMP_SPEED;
+            action->use_nitro = true;
+        }
+
+        return;
     }
 
     addSphere(sphere(m_goaliePlan.ball, rules->BALL_RADIUS, p3d(0.0, 0.0, 0.0)));
@@ -1194,15 +1200,13 @@ bool MyStrategy::setInterceptionPoint(bool& goalLine)
             bool res = makeInterceptionPlan(shootFrom, game->current_tick + t - 1, true);
             m_goaliePlan.ball = prevBallpos;
             m_goaliePlan.tick = game->current_tick + t - 1;
-
-            //m_goaliePlan = PlannedShot(prevBallpos, shootFrom, game->current_tick + t - 1, timeToElevate(shootFrom.y).second);
             return true;
         }
 
         if (fabs(ballpos.x) > rules->arena.goal_width/2 + rules->arena.goal_side_radius)
             continue;
 
-        if (ballpos.z > 0)// || fasterOpponent(ballpos, t))
+        if (ballpos.z > 0)
             continue;
 
         if (ballpos.z > -rules->arena.depth/4 && fasterOpponent(ballpos, t))
@@ -1214,7 +1218,6 @@ bool MyStrategy::setInterceptionPoint(bool& goalLine)
         {
             m_goaliePlan.tick = game->current_tick + t;
             m_goaliePlan.ball = ballpos;
-            //m_goaliePlan = PlannedShot(ballpos, shootFrom, game->current_tick + t, timeToElevate(shootFrom.y).second);
             return true;
         }
     }
@@ -1514,14 +1517,26 @@ bool MyStrategy::makeInterceptionPlan(p3d at, int targetTick, bool must)
             // intercepting the hard way
             int oldInterceptTick = game->current_tick + stopTime + runupTime;
 
+            pace -= runupTime;
+
+            if (pace < 0)
+            {
+                m_goaliePlan.steps.clear();
+
+                for (int t = game->current_tick; t <= targetTick; ++t)
+                {
+                    m_goaliePlan.steps[t].stage = "Instant Interception";
+                }
+
+                return true;
+            }
+
             while (oldInterceptTick < targetTick)
             {
                 m_goaliePlan.steps[oldInterceptTick].stage = "Old Interception";
                 ++oldInterceptTick;
             }
             return true;
-
-            timeToTakeoff = targetTick - game->current_tick - stopTime - runupTime - elevationTime.second;
         }
         else
         {
