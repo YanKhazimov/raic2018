@@ -4,7 +4,7 @@
 #include "Strategy.h"
 #include <map>
 
-#define debugging_spheres_yan true
+//#define debugging_spheres_yan true
 
 struct p3d {
     double x;
@@ -109,8 +109,6 @@ private:
     };
 
     PlannedShot m_plannedAttackerTarget;
-    //PlannedShot m_plannedGoalieTarget;
-    //std::map<int, InterceptionStep> m_interceptionPlan;
     InterceptionPlan m_goaliePlan;
 
     p3d deltaPos(p3d fromV, p3d toV, int mt);
@@ -118,12 +116,13 @@ private:
     enum Role {
         Unassigned = 0,
         Goalie,
-        Attacker
+        Attacker,
+        Bully
     };
 
-    Role m_role;
+    std::map<int, Role> m_roles; // id -> role
 
-    void getRole();
+    void getRoles();
     std::pair<int, int> getTeammate();
     double maxElevation();
     bool isRolling(const p3d& ballPos);
@@ -150,6 +149,7 @@ private:
 
     void C_bullyGoalie();
     void C_bullyAttacker();
+    void C_bullyClosestToBall();
 
     void getBehindNextLanding();
 

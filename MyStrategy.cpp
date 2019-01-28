@@ -10,7 +10,7 @@
 using namespace model;
 
 MyStrategy::MyStrategy()
-    : me(nullptr), rules(nullptr), game(nullptr), action(nullptr), m_role(Role::Unassigned),
+    : me(nullptr), rules(nullptr), game(nullptr), action(nullptr),
       m_plannedAttackerTarget(), m_goaliePlan()
 {
 }
@@ -48,6 +48,12 @@ double dot(const p3d& a, const p3d& b)
     std::vector<double> av = {a.x, a.y, a.z};
     std::vector<double> bv = {b.x, b.y, b.z};
     return std::inner_product(av.begin(), av.end(), bv.begin(), 0.0);
+}
+
+bool kickoff(const model::Ball& ball)
+{
+    return fabs(ball.velocity_x) < 0.01 && fabs(ball.x) < 0.01 &&
+            fabs(ball.velocity_z) < 0.01 && fabs(ball.z) < 0.01;
 }
 
 double MyStrategy::brakeDistance(double initialSpeed)
@@ -171,33 +177,64 @@ void MyStrategy::C_bullyAttacker()
     sprintTo(targetPos, false);
 }
 
-void MyStrategy::getRole()
+void MyStrategy::C_bullyClosestToBall()
 {
-    if (me->id == m_clearerId)
+    p3d targetPos { 0, 1000, 0 };
+    double shortestDist = 1000.0;
+
+    for (Robot r: game->robots)
     {
-        m_role = Role::Goalie;
-        return;
+        if (r.player_id == me->player_id)
+            continue;
+
+        double dist = distanceXZ(p3d(r.x, 0, r.z), p3d(game->ball.x, 0, game->ball.z));
+        if (dist < shortestDist)
+        {
+            targetPos = { r.x, r.y, r.z };
+            shortestDist = dist;
+        }
     }
 
-    auto teammate = getTeammate();
-    if (teammate.first == m_clearerId)
+    sprintTo(targetPos, false);
+}
+
+void MyStrategy::getRoles()
+{
+    if (m_roles.empty() || !m_goaliePlan.isValid() && !m_plannedAttackerTarget.isValid())
     {
-        m_role = Role::Attacker;
-        return;
+        std::multimap<double, int> zs;
+
+        for (size_t i = 0; i < game->robots.size(); ++i)
+        {
+            const Robot& r = game->robots[i];
+
+            if (r.player_id != me->player_id)
+                continue;
+
+            double dist = distanceXZ({ game->ball.x, 0, game->ball.z }, { r.x, 0, r.z });
+            zs.insert({ -dist, r.id });
+            //zs.insert({ game->robots[i].z, game->robots[i].id });
+        }
+
+        auto zIter = zs.begin();
+        m_roles[zIter->second] = Role::Goalie;
+
+        ++zIter;
+        m_roles[zIter->second] = (zs.size() > 2) ? Role::Bully : Role::Attacker;
+
+        ++zIter;
+        if (zIter != zs.end())
+             m_roles[zIter->second] = Role::Attacker;
     }
 
-    const Robot* mate = &game->robots[teammate.second];
+    auto posById = [&](int id) {
+        for (auto r: game->robots)
+            if (r.id == id)
+                return p3d(r.x, r.y, r.z);
+    };
 
-    if (mate->z < me->z ||
-            (eq(mate->z, me->z) && mate->velocity_z < me->velocity_z) ||
-            (eq(mate->z, me->z) && eq(mate->velocity_z, me->velocity_z) && mate->id < me->id))
-    {
-        m_role = Role::Attacker;
-    }
-    else
-    {
-        m_role = Role::Goalie;
-    }
+    addSphere(sphere(posById(me->id), me->radius,
+                     p3d(0.0, double(m_roles[me->id] == Role::Goalie), double(m_roles[me->id] == Role::Attacker))));
 }
 
 std::pair<int, int> MyStrategy::getTeammate()
@@ -628,15 +665,22 @@ void MyStrategy::act(const Robot& _me, const Rules& _rules, const Game& _game, A
         m_text = "";
     }
 
-    getRole();
+    getRoles();
 
-    if (m_role == Role::Attacker)
+    if (m_roles[me->id] == Role::Attacker)
     {
-        //C_attack();
+        C_attack();
         return;
     }
-
-    C_defend();
+    else if (m_roles[me->id] == Role::Bully)
+    {
+        C_bullyClosestToBall();
+        return;
+    }
+    else
+    {
+        C_defend();
+    }
 }
 
 std::string MyStrategy::logSphere(double x, double y, double z, double r, p3d rgb)
@@ -716,7 +760,7 @@ bool MyStrategy::interceptBounceAt(const futurePoint& point)
         double desiredSpeed = rules->ROBOT_MAX_GROUND_SPEED * sprintTime / point.t;
         setSpeed(desiredSpeed, p3d(point.pos.x - me->x, 0.0, point.pos.z - me->z));
 
-        if (m_role == Role::Goalie && 30 >= point.t)
+        if (m_roles[me->id] == Role::Goalie && 30 >= point.t)
         {
             if (m_clearerId == me->id)
                 m_clearerId = -1;
@@ -965,8 +1009,7 @@ void MyStrategy::alignShot()
 
 void MyStrategy::C_attack()
 {
-    if (fabs(game->ball.velocity_x) < 0.01 && fabs(game->ball.x) < 0.01 &&
-            fabs(game->ball.velocity_z) < 0.01 && fabs(game->ball.z) < 0.01) // kickoff
+    if (kickoff(game->ball)) // kickoff
     {
         sprintTo(p3d(), true);
         action->use_nitro = true;
@@ -1033,15 +1076,14 @@ void MyStrategy::C_attack()
         addSphere(sphere(ballpos, rules->BALL_RADIUS, p3d(1.0, 1.0, 1.0)));
     }
 
-    futurePoint shootFrom;
-    futurePoint ballFrom;
-    int shootingPace, elevationTime;
+    m_plannedAttackerTarget.invalidate();
 
     if (!me->touch)
         return;
 
-    m_plannedAttackerTarget.invalidate();
-
+    futurePoint shootFrom;
+    futurePoint ballFrom;
+    int shootingPace, elevationTime;
     if (pickShootingPoint(200, shootFrom, ballFrom, shootingPace, elevationTime))
     {
         m_text = "New shot " + std::to_string(shootingPace);
