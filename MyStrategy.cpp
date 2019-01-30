@@ -621,7 +621,7 @@ bool MyStrategy::pickShootingPoint(int ticks, futurePoint& bestTarget, futurePoi
         p3d moveTarget = alignHitTo(goalTarget, ballpos,
                                     distanceXZ(ballpos, goalTarget) > rules->arena.depth/2);
 
-        if (moveTarget.z > rules->arena.depth/2 &&
+        if (moveTarget.z > 0 &&
                 fabs(moveTarget.x) > rules->arena.width/2 - rules->arena.bottom_radius)
             continue;
 
@@ -648,7 +648,7 @@ bool MyStrategy::pickShootingPoint(int ticks, futurePoint& bestTarget, futurePoi
             bestBall = futurePoint(ballpos, ballv, t);
         }
 
-        if (abs(bestPace) < 2)
+        if (abs(bestPace) < 1)
             break;
     }
     return abs(bestPace) < criticalPaceDiff && bestElevationTime != -1;
@@ -779,7 +779,7 @@ std::pair<int, int> MyStrategy::measureShot(futurePoint target)
     if (elevationTime == -1)
         return { -criticalPaceDiff, -1 };
 
-    int t = sprintTime(target.pos, me);//interceptionTime(target.pos, me, elevationTime);//
+    int t = interceptionTime(target.pos, me, elevationTime);//sprintTime(target.pos, me);//
     int pace = target.t - t;
 
     return { pace, elevationTime };
@@ -1327,9 +1327,11 @@ int MyStrategy::sprintTime(p3d at, const Robot* robot)
     int takesTicks = 0;
     while (distanceCovered < myDistance)
     {
+        double curVAlong = vAlong;
         vAlong += rules->ROBOT_ACCELERATION * (1.0 / TICKS);
         vAlong = std::min(vAlong, rules->ROBOT_MAX_GROUND_SPEED);
-        distanceCovered += vAlong * (1.0 / TICKS);
+        double deltaP = length(deltaPos(p3d(curVAlong, 0, 0), p3d(vAlong, 0, 0), 100));
+        distanceCovered += deltaP;//vAlong * (1.0 / TICKS);
         ++takesTicks;
     }
 
